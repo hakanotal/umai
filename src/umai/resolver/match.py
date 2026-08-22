@@ -58,9 +58,16 @@ class Resolution:
 
 
 class Resolver:
-    def __init__(self, session: AsyncSession, models: ModelClient | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        models: ModelClient | None = None,
+        *,
+        caption: str | None = None,
+    ) -> None:
         self._db = session
         self._models = models
+        self._caption = caption
 
     async def resolve(
         self,
@@ -244,6 +251,10 @@ class Resolver:
             return None
 
         listing = "\n".join(f"{i}. {c.name} ({c.state.value})" for i, c in enumerate(candidates))
+        user_msg = f'Detected: "{name}" (state: {state.value})'
+        if self._caption:
+            user_msg += f'\nUser called this: "{self._caption}"'
+        user_msg += f"\n\nCandidates:\n{listing}"
         try:
             content, _served, _ms = await self._models.acall(
                 "resolution",
@@ -259,9 +270,7 @@ class Resolver:
                     },
                     {
                         "role": "user",
-                        "content": (
-                            f'Detected: "{name}" (state: {state.value})\n\nCandidates:\n{listing}'
-                        ),
+                        "content": user_msg,
                     },
                 ],
                 schema={

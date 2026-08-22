@@ -36,8 +36,9 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import Insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -54,6 +55,7 @@ from umai.db.models import (
     FoodState,
     GramsSource,
     LogEntry,
+    Media,
     ResolutionMethod,
     User,
 )
@@ -174,9 +176,7 @@ async def log_food_items(
     return LoggedMeal(entry=entry, items=logged)
 
 
-def macros_for_food(
-    food: Food, *, grams: float, detected_state: FoodState
-) -> compute_mod.Macros:
+def macros_for_food(food: Food, *, grams: float, detected_state: FoodState) -> compute_mod.Macros:
     """Macros for `grams` of `food`, given the state it was observed in.
 
     The raw-versus-cooked and absorbed-oil decisions live here, in one function,
@@ -280,9 +280,7 @@ async def remember(session: AsyncSession, user_id: uuid.UUID, meal: LoggedMeal) 
         # The name the user's own logs use, which is what the library matches
         # against next time — not the canonical table name.
         display = (item.detected_name or "").strip()[:200] or "food"
-        await session.execute(
-            insert_library(user_id, item.food_id, display, now)
-        )
+        await session.execute(insert_library(user_id, item.food_id, display, now))
         await _update_prior(session, user_id, item.food_id)
 
 
@@ -505,6 +503,198 @@ async def supersede_with_grams(
 
 
 # ---------------------------------------------------------------------------
+# Editing and removing today's entries
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class TodayEntry:
+    """One live entry from today, shaped for the edit list.
+
+    The local time string is computed once here, where the user's timezone is
+    at hand, so the keyboard layer never touches time at all.
+    """
+
+    entry_id: uuid.UUID
+    kind: EntryKind
+    occurred_at: dt.datetime
+    kcal: float
+    ml: float
+    item_count: int
+    local_time: str
+
+    @property
+    def prefix(self) -> str:
+        return str(self.entry_id)[:8]
+
+    @property
+    def button_label(self) -> str:
+        if self.kind is EntryKind.water:
+            return f"{self.local_time} · 💧 {self.ml:.0f} ml"
+        return f"{self.local_time} · {self.kcal:.0f} kcal"
+
+
+async def today_entries(session: AsyncSession, user: User, clock: Clock) -> list[TodayEntry]:
+    """Today's live entries, oldest first, meals and water together.
+
+    The edit list is the one place a user goes to fix a mistake, so it shows
+    everything that can be fixed: a mis-tapped water button is exactly as
+    wrong as a mis-estimated meal.
+    """
+    start, end = day_bounds(today(clock, user.tz), user.tz)
+    rows = (
+        (
+            await session.execute(
+                select(LogEntry)
+                .where(
+                    LogEntry.user_id == user.id,
+                    LogEntry.occurred_at >= start,
+                    LogEntry.occurred_at < end,
+                    LogEntry.superseded_by.is_(None),
+                    LogEntry.kind.in_((EntryKind.food, EntryKind.drink, EntryKind.water)),
+                )
+                .order_by(LogEntry.occurred_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    out: list[TodayEntry] = []
+    for e in rows:
+        local = e.occurred_at.astimezone(ZoneInfo(user.tz)).strftime("%H:%M")
+        if e.kind is EntryKind.water:
+            out.append(
+                TodayEntry(
+                    entry_id=e.id,
+                    kind=e.kind,
+                    occurred_at=e.occurred_at,
+                    kcal=0.0,
+                    ml=float(e.value or 0.0),
+                    item_count=0,
+                    local_time=local,
+                )
+            )
+        else:
+            kcal, n_items = (
+                await session.execute(
+                    select(
+                        func.coalesce(func.sum(FoodItem.kcal), 0.0),
+                        func.count(FoodItem.id),
+                    ).where(FoodItem.entry_id == e.id)
+                )
+            ).one()
+            out.append(
+                TodayEntry(
+                    entry_id=e.id,
+                    kind=e.kind,
+                    occurred_at=e.occurred_at,
+                    kcal=float(kcal),
+                    ml=0.0,
+                    item_count=int(n_items),
+                    local_time=local,
+                )
+            )
+    return out
+
+
+async def hard_delete_entry(session: AsyncSession, user_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
+    """Remove an entry and everything it dragged in, for good.
+
+    The user asked for removal, not archiving, so the row goes. What must not
+    go with it:
+
+      * The photo. `media` cascades on the entry FK, but the media row is the
+        re-scoring archive: the raw model response in `perception_runs` hangs
+        off it and exists precisely so an old photo can be re-scored when a
+        better model arrives. It is detached, not deleted.
+      * The chain. A corrected meal is a supersede chain, newest live link
+        last. Deleting only the newest link would resurrect the version the
+        user corrected, and deleting a meal they asked removed must remove the
+        meal they ate, not the first draft of it.
+      * The corrections rows. They reference the entry and its items with no
+        ON DELETE clause, so they are cleared first; an audit of a deleted
+        thing is noise.
+
+    Returns False when the entry is not the user's or already superseded
+    (an inner chain link is never addressable from the UI; deleting it would
+    corrupt the chain of the live entry).
+    """
+    entry = await session.get(LogEntry, entry_id)
+    if entry is None or entry.user_id != user_id or entry.superseded_by is not None:
+        return False
+
+    # Walk the chain back from the live entry to the original.
+    chain = [entry_id]
+    while True:
+        predecessor = (
+            await session.execute(select(LogEntry.id).where(LogEntry.superseded_by == chain[-1]))
+        ).scalar_one_or_none()
+        if predecessor is None:
+            break
+        chain.append(predecessor)
+
+    for eid in chain:
+        await session.execute(
+            delete(Correction).where(
+                or_(
+                    Correction.entry_id == eid,
+                    Correction.food_item_id.in_(
+                        select(FoodItem.id).where(FoodItem.entry_id == eid)
+                    ),
+                )
+            )
+        )
+        await session.execute(update(Media).where(Media.entry_id == eid).values(entry_id=None))
+        # An inner link of someone else's chain cannot exist here (each entry
+        # has at most one successor), but the SET NULL keeps the delete legal
+        # regardless of who points where.
+        await session.execute(
+            update(LogEntry).where(LogEntry.superseded_by == eid).values(superseded_by=None)
+        )
+
+    for eid in chain:
+        # food_items cascade on the entry FK; corrections and media were
+        # handled above.
+        await session.execute(delete(LogEntry).where(LogEntry.id == eid))
+    return True
+
+
+async def edit_water(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    new_ml: float,
+) -> LogEntry | None:
+    """Replace a water entry's amount. Old row out, new row in.
+
+    Consistent with hard delete: the user chose removal over archiving, so
+    editing is not modelled as a supersede. The original timestamp is kept,
+    because when you drank the water did not change, only the number did.
+    """
+    old = await session.get(LogEntry, entry_id)
+    if (
+        old is None
+        or old.user_id != user_id
+        or old.kind is not EntryKind.water
+        or old.superseded_by is not None
+    ):
+        return None
+    occurred_at, source = old.occurred_at, old.source
+    if not await hard_delete_entry(session, user_id, entry_id):
+        return None
+    return await log_simple(
+        session,
+        user_id,
+        kind=EntryKind.water,
+        value=new_ml,
+        unit="ml",
+        occurred_at=occurred_at,
+        source=source,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Simple logs: water, weight, supplements
 # ---------------------------------------------------------------------------
 
@@ -690,29 +880,53 @@ def format_meal(meal: LoggedMeal) -> str:
     shown.
 
     When some items are unmatched the total is deliberately *not* presented as
-    a total. It is arithmetically correct and factually absurd — the first live
-    session showed a plate of lahmacun as "Total 10 kcal" — and a number a user
+    a total. It is arithmetically correct and factually absurd, the first live
+    session showed a plate of lahmacun as "Total 10 kcal", and a number a user
     reads as their day's intake must not be silently missing most of the plate.
     The enrichment job fills these in within minutes; the wording says so.
     """
     lines = []
     for n, item in enumerate(meal.items, start=1):
         if item.unmatched:
-            lines.append(f"{n}. {item.name} — {item.grams:.0f}g  ⏳ looking it up")
+            lines.append(f"{n}. {item.name}: {item.grams:.0f}g, still looking it up ⏳")
         else:
-            lines.append(f"{n}. {item.name} — {item.grams:.0f}g  {item.kcal:.0f} kcal")
+            lines.append(f"{n}. {item.name}: {item.grams:.0f}g, {item.kcal:.0f} kcal")
 
     missing = sum(1 for i in meal.items if i.unmatched)
     if not missing:
         lines.append(f"Total {meal.total_kcal:.0f} kcal")
     elif missing == len(meal.items):
-        lines.append("No totals yet — none of these are in the food table.")
+        lines.append("No totals yet. None of these are in the food table.")
     else:
-        lines.append(
-            f"At least {meal.total_kcal:.0f} kcal "
-            f"({missing} item(s) still being looked up)"
-        )
+        lines.append(f"At least {meal.total_kcal:.0f} kcal. Still looking up {missing} item(s).")
     return "\n".join(lines)
+
+
+def format_entry(user: User, entry: LogEntry) -> str:
+    """Re-render a logged entry for the edit view.
+
+    The meal exactly as it was first shown (so the ✏️ item numbers line up
+    with what the user remembers), or the water amount.
+    """
+    local = entry.occurred_at.astimezone(ZoneInfo(user.tz)).strftime("%H:%M")
+    if entry.kind is EntryKind.water:
+        return f"💧 {float(entry.value or 0.0):.0f} ml at {local}"
+    items = sorted(entry.items, key=lambda i: (i.position is None, i.position))
+    return format_meal(
+        LoggedMeal(
+            entry=entry,
+            items=[
+                LoggedItem(
+                    name=fi.detected_name or "food",
+                    grams=fi.grams,
+                    kcal=fi.kcal,
+                    protein_g=fi.protein_g,
+                    unmatched=fi.food_id is None and fi.recipe_id is None,
+                )
+                for fi in items
+            ],
+        )
+    )
 
 
 def format_day(user: User, totals: DayTotals, target: safety.TargetDecision | None) -> str:
@@ -733,7 +947,7 @@ def format_day(user: User, totals: DayTotals, target: safety.TargetDecision | No
     if totals.unmatched_items:
         lines.append(
             f"⏳ {totals.unmatched_items} item(s) not yet in the food table, so "
-            "this total is a floor, not a total."
+            "this total may rise."
         )
     return "\n".join(lines)
 

@@ -28,8 +28,10 @@ log = logging.getLogger(__name__)
 
 COMMANDS = [
     BotCommand(command="start", description="what I can do"),
-    BotCommand(command="summary", description="where you are today"),
+    BotCommand(command="help", description="what I can do"),
+    BotCommand(command="summary", description="today's totals"),
     BotCommand(command="week", description="the last seven days"),
+    BotCommand(command="edit", description="fix or remove today's entries"),
     BotCommand(command="cuisines", description="what you usually eat"),
 ]
 

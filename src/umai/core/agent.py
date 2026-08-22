@@ -139,16 +139,24 @@ def parse_classification(content: str | None) -> Classification:
 # The reply layer
 # ---------------------------------------------------------------------------
 
-LOOKING_UP = "I'm looking the missing ones up now — I'll have the totals shortly."
+LOOKING_UP = "I'm still looking up some of these foods. I'll have the totals shortly."
 
-HELP = """I log what you eat so you don't have to think about it.
+HELP = """I keep track of what you eat, so you don't have to think about it.
 
-Send a photo of the meal — I identify the items, estimate grams, and log it.
-Or type it: "200g rice and chicken", "iki yumurta", "a coffee".
-Buttons below for the repetitive stuff.
+Send a photo of your meal and I'll identify the items, estimate the amounts and log it.
+You can also just type it: "200g rice and chicken" or "a coffee".
 
-/summary — where you are today
-/week — the last seven days
+The buttons under the message field cover the daily routine:
+💧 250 / 500 ml: log water in one tap
+📊 Today: today's totals
+✏️ Edit today: fix or remove something you logged
+⚖️ Weigh in: log your morning weight
+
+Commands:
+/summary: where you are today
+/week: the last seven days
+/edit: fix or remove today's entries
+/cuisines: what you usually eat
 """
 
 
@@ -205,7 +213,7 @@ async def handle_text(
     if c.intent == "log_water":
         # A zero is the classifier failing to extract, not a logged nothing.
         if not c.ml or c.ml <= 0:
-            return Reply("How much? Send it like '500 ml' or tap the water button.")
+            return Reply("How much? Send it like '500 ml' or tap a water button.")
         await tools.log_simple(
             session,
             user.id,
@@ -215,7 +223,7 @@ async def handle_text(
             occurred_at=clock.now(),
             source=EntrySource.text,
         )
-        return Reply(f"Water logged: {c.ml:.0f} ml")
+        return Reply(f"Water logged: {c.ml:.0f} ml 💧")
     if c.intent == "log_weight":
         if not c.kg or c.kg <= 0:
             return Reply("What did the scale say? Just send the number.")
@@ -244,7 +252,7 @@ def _cuisine_hint(user: User) -> str:
 
 async def _log_weight(session: AsyncSession, user: User, clock: Clock, kg: float) -> str:
     if not safety.is_plausible_weight(kg):
-        return f"{kg} doesn't look like a body weight — send 'weighed {kg} kg' if meant."
+        return f"{kg} doesn't look like a body weight. If you meant it, send 'weighed {kg} kg'."
     await tools.log_simple(
         session,
         user.id,
@@ -282,9 +290,7 @@ async def _log_food(
                 # rice" is a weight the user stated; "some rice" is one the
                 # classifier guessed. The calibration engine is entitled to
                 # tell those apart, and stamping both as vlm lies to it.
-                grams_source=(
-                    GramsSource.vlm if it["grams_estimated"] else GramsSource.user
-                ),
+                grams_source=(GramsSource.vlm if it["grams_estimated"] else GramsSource.user),
                 grams_confidence=0.4 if it["grams_estimated"] else 1.0,
                 resolution=resolution,
             )
@@ -301,7 +307,7 @@ async def _log_food(
 
     reply = tools.format_meal(meal)
     if all(i["grams_estimated"] for i in items):
-        reply += "\n(amounts estimated — tap ✏️ to correct one)"
+        reply += "\n(amounts estimated, tap ✏️ to correct one)"
     if meal.has_unmatched:
         reply += "\n\n" + LOOKING_UP
     return Reply(reply, meal.entry.id, needs_enrichment=meal.has_unmatched)
@@ -346,9 +352,10 @@ async def log_photo(
     clock: Clock,
     outcome: PerceptionOutcome,
     media_id: uuid.UUID | None = None,
+    caption: str | None = None,
 ) -> Reply:
     """Stages 2-4 for a perception result."""
-    resolver = Resolver(session, models)
+    resolver = Resolver(session, models, caption=caption)
     to_log = [
         tools.ItemToLog(
             detected_name=it.name,

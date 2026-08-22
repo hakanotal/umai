@@ -18,13 +18,21 @@ from aiogram.types import CallbackQuery, Message, PhotoSize
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from umai.analytics import safety
 from umai.clock import Clock
 from umai.config.models import ModelClient
 from umai.config.settings import Settings
 from umai.core import agent, tools
 from umai.core import cuisines as cuisines_mod
-from umai.db.models import EntryKind, EntrySource, FoodItem, LogEntry, Media
+from umai.db.models import (
+    EntryKind,
+    EntrySource,
+    FoodItem,
+    LogEntry,
+    Media,
+)
 from umai.db.session import session_scope
 from umai.perception import images as image_tools
 from umai.perception import prompt as prompt_mod
@@ -37,7 +45,7 @@ router = Router(name="umai")
 
 
 class Awaiting(StatesGroup):
-    """The chat is waiting for one number: a gram value or a weigh-in."""
+    """The chat is waiting for one number: grams, a weigh-in, or new ml."""
 
     number = State()
 
@@ -65,8 +73,9 @@ def _cb_message(callback: CallbackQuery) -> Message | None:
 
 
 @router.message(CommandStart())
+@router.message(Command("help"))
 async def start(message: Message) -> None:
-    await message.answer(agent.HELP, reply_markup=keyboards.quick_actions())
+    await message.answer(agent.HELP, reply_markup=keyboards.main_menu())
 
 
 @router.message(Command("summary"))
@@ -74,7 +83,8 @@ async def start(message: Message) -> None:
 async def today(message: Message, settings: Settings, clock: Clock) -> None:
     async with session_scope() as session:
         user = await tools.get_or_create_user(session, settings, _sender_id(message), clock=clock)
-        await message.answer(await agent.summary_line(session, user, clock))
+        text = await agent.summary_line(session, user, clock)
+    await message.answer(text, reply_markup=keyboards.summary_actions())
 
 
 @router.message(Command("week"))
@@ -84,14 +94,29 @@ async def week(message: Message, settings: Settings, clock: Clock) -> None:
         await message.answer(await agent.week_summary(session, user, clock))
 
 
+@router.message(Command("edit"))
+async def edit_command(message: Message, settings: Settings, clock: Clock) -> None:
+    """The typed door into the edit flow. Same view as the ✏️ Edit today button."""
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(session, settings, _sender_id(message), clock=clock)
+        entries = await tools.today_entries(session, user, clock)
+    if not entries:
+        await message.answer("Nothing logged today yet.")
+        return
+    await message.answer(
+        "Today's entries. Tap one to edit or remove it:",
+        reply_markup=keyboards.edit_list(entries),
+    )
+
+
 @router.message(Command("cuisines"))
 async def cuisines_command(message: Message, settings: Settings, clock: Clock) -> None:
     """Pick the cuisines you actually eat.
 
     Not a preference setting. The list is injected into the vision model's
     prompt, and it is the difference between "flatbread with reddish meat and
-    pepper paste topping" — which matches nothing in a food table and was
-    logged at zero calories — and "lahmacun", which is a lookup key and, failing
+    pepper paste topping", which matches nothing in a food table and was
+    logged at zero calories, and "lahmacun", which is a lookup key and, failing
     that, something the enrichment job can research.
     """
     async with session_scope() as session:
@@ -152,47 +177,203 @@ async def cuisine_done(callback: CallbackQuery, settings: Settings, clock: Clock
     await callback.answer()
 
 
-# --- quick-action buttons ------------------------------------------------------
+# --- the persistent menu (reply keyboard) ---------------------------------------
+#
+# The buttons arrive as ordinary text. They are matched by exact label before
+# the intent classifier sees anything, which keeps the invariant that a button
+# tap never costs a model call.
 
 
-@router.callback_query(F.data.startswith("water:"))
-async def water(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
-    ml = float(_cb_data(callback).split(":")[1])
-    async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
-        await tools.log_simple(
-            session,
-            user.id,
-            kind=EntryKind.water,
-            value=ml,
-            unit="ml",
-            occurred_at=clock.now(),
+_MENU_LABELS = {
+    keyboards.WATER_250,
+    keyboards.WATER_500,
+    keyboards.BTN_TODAY,
+    keyboards.BTN_EDIT,
+    keyboards.BTN_WEIGH,
+}
+
+
+@router.message(F.text.in_(_MENU_LABELS))
+async def menu_button(
+    message: Message, state: FSMContext, settings: Settings, clock: Clock
+) -> None:
+    assert message.text is not None  # the F.text filter guarantees it
+    label = message.text
+    if label in (keyboards.WATER_250, keyboards.WATER_500):
+        ml = 250.0 if label == keyboards.WATER_250 else 500.0
+        async with session_scope() as session:
+            user = await tools.get_or_create_user(
+                session, settings, _sender_id(message), clock=clock
+            )
+            await tools.log_simple(
+                session,
+                user.id,
+                kind=EntryKind.water,
+                value=ml,
+                unit="ml",
+                occurred_at=clock.now(),
+            )
+        await message.answer(f"Water logged: {ml:.0f} ml 💧")
+        return
+    if label == keyboards.BTN_TODAY:
+        async with session_scope() as session:
+            user = await tools.get_or_create_user(
+                session, settings, _sender_id(message), clock=clock
+            )
+            text = await agent.summary_line(session, user, clock)
+        await message.answer(text, reply_markup=keyboards.summary_actions())
+        return
+    if label == keyboards.BTN_EDIT:
+        async with session_scope() as session:
+            user = await tools.get_or_create_user(
+                session, settings, _sender_id(message), clock=clock
+            )
+            entries = await tools.today_entries(session, user, clock)
+        if not entries:
+            await message.answer("Nothing logged today yet.")
+            return
+        await message.answer(
+            "Today's entries. Tap one to edit or remove it:",
+            reply_markup=keyboards.edit_list(entries),
         )
-    await callback.answer(f"+{ml:.0f} ml 💧", show_alert=False)
-
-
-@router.callback_query(F.data == "today")
-async def today_button(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
-    attached = _cb_message(callback)
-    if attached is None:
-        await callback.answer("Message is gone — send /summary instead.", show_alert=True)
         return
-    async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
-        await attached.answer(await agent.summary_line(session, user, clock))
-    await callback.answer()
-
-
-@router.callback_query(F.data == "weigh")
-async def weigh_button(callback: CallbackQuery, state: FSMContext) -> None:
-    attached = _cb_message(callback)
-    if attached is None:
-        await callback.answer("Message is gone — just send the number.", show_alert=True)
-        return
+    # BTN_WEIGH
     await state.set_state(Awaiting.number)
     await state.update_data(mode="weight")
-    await attached.answer("Send me the number on the scale.")
+    await message.answer("Send me the number on the scale ⚖️")
+
+
+# --- edit and remove today's entries ---------------------------------------------
+
+
+@router.callback_query(F.data == "editlist")
+async def edit_list_open(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+    attached = _cb_message(callback)
+    if attached is None:
+        await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
+        return
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        entries = await tools.today_entries(session, user, clock)
+    if not entries:
+        await callback.answer("Nothing logged today yet.", show_alert=True)
+        return
+    with contextlib.suppress(Exception):  # unchanged markup is a 400
+        await attached.edit_text(
+            "Today's entries. Tap one to edit or remove it:",
+            reply_markup=keyboards.edit_list(entries),
+        )
     await callback.answer()
+
+
+@router.callback_query(F.data == "editclose")
+async def edit_list_close(callback: CallbackQuery) -> None:
+    attached = _cb_message(callback)
+    if attached is not None:
+        with contextlib.suppress(Exception):
+            await attached.edit_text("Closed. Tap ✏️ Edit today any time.")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit:"))
+async def edit_entry_open(
+    callback: CallbackQuery, state: FSMContext, settings: Settings, clock: Clock
+) -> None:
+    """The per-entry view: a meal gets per-item gram fixes and removal,
+    water gets a new amount and removal."""
+    attached = _cb_message(callback)
+    if attached is None:
+        await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
+        return
+    await state.clear()
+    prefix = _cb_data(callback).split(":", 1)[1]
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        entry = await _live_entry_by_prefix(session, user.id, prefix)
+        if entry is None:
+            await callback.answer("That entry is gone. Tap ↩ Back for the list.", show_alert=True)
+            return
+        text = tools.format_entry(user, entry)
+        if entry.kind is EntryKind.water:
+            markup = keyboards.edit_water(prefix)
+        else:
+            markup = keyboards.edit_meal(prefix, len(entry.items))
+    with contextlib.suppress(Exception):
+        await attached.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("del:"))
+async def delete_ask(callback: CallbackQuery, state: FSMContext) -> None:
+    attached = _cb_message(callback)
+    if attached is None:
+        await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
+        return
+    await state.clear()
+    prefix = _cb_data(callback).split(":", 1)[1]
+    with contextlib.suppress(Exception):
+        await attached.edit_text(
+            "Remove this entry? This cannot be undone.",
+            reply_markup=keyboards.delete_confirm(prefix),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("delyes:"))
+async def delete_confirm(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+    attached = _cb_message(callback)
+    if attached is None:
+        await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
+        return
+    prefix = _cb_data(callback).split(":", 1)[1]
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        entry = await _live_entry_by_prefix(session, user.id, prefix)
+        if entry is not None:
+            await tools.hard_delete_entry(session, user.id, entry.id)
+    with contextlib.suppress(Exception):
+        await attached.edit_text("Removed ✅")
+    await callback.answer("Removed")
+
+
+@router.callback_query(F.data.startswith("waterfix:"))
+async def water_fix(callback: CallbackQuery, state: FSMContext) -> None:
+    attached = _cb_message(callback)
+    if attached is None:
+        await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
+        return
+    prefix = _cb_data(callback).split(":", 1)[1]
+    await state.set_state(Awaiting.number)
+    await state.update_data(mode="water_edit", entry_prefix=prefix)
+    await attached.answer("Send me the new amount in ml.")
+    await callback.answer()
+
+
+async def _live_entry_by_prefix(
+    session: AsyncSession, user_id: uuid.UUID, prefix: str
+) -> LogEntry | None:
+    """Resolve an 8-character prefix to a live entry of any editable kind.
+
+    Same scoping reasoning as _entry_by_prefix: callback data is short by
+    necessity, and an unscoped scan is a cross-user read waiting for the day
+    a second user exists. Items are eager-loaded because the meal view reads
+    them after the session's work is otherwise done.
+    """
+    stmt = (
+        select(LogEntry)
+        .options(selectinload(LogEntry.items))
+        .where(
+            LogEntry.user_id == user_id,
+            LogEntry.kind.in_((EntryKind.food, EntryKind.drink, EntryKind.water)),
+            LogEntry.superseded_by.is_(None),
+        )
+        .order_by(LogEntry.logged_at.desc())
+        .limit(50)
+    )
+    for row in (await session.execute(stmt)).scalars():
+        if str(row.id).startswith(prefix):
+            return row
+    return None
 
 
 # --- meal confirmation ---------------------------------------------------------
@@ -202,7 +383,9 @@ async def weigh_button(callback: CallbackQuery, state: FSMContext) -> None:
 async def fix_item(callback: CallbackQuery, state: FSMContext) -> None:
     attached = _cb_message(callback)
     if attached is None:
-        await callback.answer("Too old to edit — log it fresh.", show_alert=True)
+        await callback.answer(
+            "Too old to edit. Log it fresh, or try ✏️ Edit today.", show_alert=True
+        )
         return
     _, entry_prefix, item_no = _cb_data(callback).split(":")
     await state.set_state(Awaiting.number)
@@ -226,12 +409,17 @@ async def number_received(
     try:
         value = float(message.text.strip().replace(",", "."))
     except ValueError:
-        await message.answer("Just the number, please (or /summary to move on).")
+        await message.answer("Just the number, please. Or tap ✏️ Edit today to pick something else.")
         return
 
     async with session_scope() as session:
         user = await tools.get_or_create_user(session, settings, _sender_id(message), clock=clock)
         if data.get("mode") == "weight":
+            if not safety.is_plausible_weight(value):
+                await message.answer(
+                    f"{value} doesn't look like a body weight. Try again, or send something else."
+                )
+                return
             await tools.log_simple(
                 session,
                 user.id,
@@ -242,19 +430,39 @@ async def number_received(
                 source=EntrySource.button,
             )
             await state.clear()
-            await message.answer(f"Logged {value:.1f} kg")
+            await message.answer(f"Logged {value:.1f} kg ⚖️")
+            return
+
+        if data.get("mode") == "water_edit":
+            if value <= 0:
+                await message.answer(
+                    "The amount needs to be above zero. Send a number in ml, or tap ↩ Back."
+                )
+                return
+            entry = await _live_entry_by_prefix(session, user.id, data["entry_prefix"])
+            if entry is None or entry.kind is not EntryKind.water:
+                await state.clear()
+                await message.answer("That water entry is gone. Tap ✏️ Edit today for the list.")
+                return
+            new_entry = await tools.edit_water(session, user.id, entry.id, value)
+            if new_entry is None:
+                await state.clear()
+                await message.answer("That water entry is gone. Tap ✏️ Edit today for the list.")
+                return
+            await state.clear()
+            await message.answer(f"Water updated: {value:.0f} ml 💧")
             return
 
         entry_id = await _entry_by_prefix(session, user.id, data["entry_prefix"])
         if entry_id is None:
             await state.clear()
-            await message.answer("That meal is too old to edit — log it fresh.")
+            await message.answer("That meal is too old to edit. Log it fresh, or tap ✏️ Edit today.")
             return
 
         meal = await _fix_item_grams(session, entry_id, data["item_no"], value)
         if meal is None:
             await state.clear()
-            await message.answer("I couldn't find that item — log the meal fresh.")
+            await message.answer("I couldn't find that item. Tap ✏️ Edit today for the list.")
             return
 
         # The correction supersedes the entry, so the buttons under the old
@@ -269,27 +477,16 @@ async def number_received(
 async def _entry_by_prefix(
     session: AsyncSession, user_id: uuid.UUID, prefix: str
 ) -> uuid.UUID | None:
-    """Resolve the 8-character prefix a callback carries back to an entry.
+    """Resolve an 8-character prefix back to a meal entry.
 
-    Scoped to this user and to food entries: callback data is short by
-    necessity (Telegram caps it at 64 bytes) and an unscoped prefix scan is a
-    cross-user read waiting for the day a second user exists.
+    Scoped to this user: callback data is short by necessity (Telegram caps it
+    at 64 bytes) and an unscoped prefix scan is a cross-user read waiting for
+    the day a second user exists.
     """
-    stmt = (
-        select(LogEntry.id)
-        .where(
-            LogEntry.user_id == user_id,
-            LogEntry.kind == EntryKind.food,
-            LogEntry.superseded_by.is_(None),
-        )
-        .order_by(LogEntry.logged_at.desc())
-        .limit(50)
-    )
-    for (id_,) in (await session.execute(stmt)).all():
-        found: uuid.UUID = id_
-        if str(found).startswith(prefix):
-            return found
-    return None
+    entry = await _live_entry_by_prefix(session, user_id, prefix)
+    if entry is None or entry.kind not in (EntryKind.food, EntryKind.drink):
+        return None
+    return entry.id
 
 
 async def _fix_item_grams(
@@ -347,7 +544,7 @@ async def photo(
             return
         path = await _download_with_retry(message, sizes[-1], settings)
         if path is None:
-            await message.answer("Couldn't fetch the photo from Telegram — try again?")
+            await message.answer("Couldn't fetch the photo from Telegram. Please try again.")
             return
 
         # 1. read what is needed for the prompt, then close the transaction.
@@ -361,6 +558,7 @@ async def photo(
                 portion_priors=await tools.portion_priors(session, user_id),
                 cuisines=cuisines,
                 local_time=clock.now().astimezone(ZoneInfo(tz)).strftime("%A %H:%M"),
+                note=message.caption or None,
             )
             media_id = await _record_media(session, path, tz)
 
@@ -369,7 +567,7 @@ async def photo(
             outcome = await perception.analyse(path, ctx)
         except Exception:
             log.exception("perception failed")
-            await message.answer("I couldn't read that photo — another angle might help.")
+            await message.answer("I couldn't read that photo. Another angle might help.")
             return
 
         # 3. resolve, write, reply.
@@ -384,15 +582,14 @@ async def photo(
                 clock=clock,
                 outcome=outcome,
                 media_id=media_id,
+                caption=message.caption or None,
             )
         text = logged.text
         if outcome.result.clarifying_question:
             text += f"\n❓ {outcome.result.clarifying_question}"
         await message.answer(
             text,
-            reply_markup=keyboards.meal_actions(
-                str(logged.entry_id), len(outcome.result.items)
-            ),
+            reply_markup=keyboards.meal_actions(str(logged.entry_id), len(outcome.result.items)),
         )
         if logged.needs_enrichment:
             # Nudge the background researcher rather than making the user wait
@@ -503,9 +700,7 @@ async def _dinnerware(session: AsyncSession, user_id: uuid.UUID) -> dict[str, st
 
 
 @router.message(F.text)
-async def text(
-    message: Message, settings: Settings, clock: Clock, models: ModelClient
-) -> None:
+async def text(message: Message, settings: Settings, clock: Clock, models: ModelClient) -> None:
     assert message.text is not None  # the F.text filter guarantees it
     async with session_scope() as session:
         user = await tools.get_or_create_user(session, settings, _sender_id(message), clock=clock)
@@ -515,17 +710,20 @@ async def text(
             )
         except Exception:
             log.exception("text handling failed")
-            reply = agent.Reply("Something went wrong reading that — try again?")
+            reply = agent.Reply("Something went wrong reading that. Please try again.")
 
     # A typed meal gets the same per-item correction keyboard a photographed
     # one gets. Without it "200g rice and chicken" was uncorrectable while the
     # reply suggested a /fix command that was never registered.
+    #
+    # Non-meal replies carry no keyboard at all: the persistent reply keyboard
+    # already holds the quick actions, and repeating them inline under every
+    # message made the chat a wall of duplicate buttons.
+    markup = None
     if reply.entry_id is not None:
         async with session_scope() as session:
             count = await _item_count(session, reply.entry_id)
         markup = keyboards.meal_actions(str(reply.entry_id), count)
-    else:
-        markup = keyboards.quick_actions()
     await message.answer(reply.text, reply_markup=markup)
     if reply.needs_enrichment:
         _nudge_enrichment(models, clock)

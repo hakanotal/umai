@@ -1,5 +1,0 @@
--repo cleanup, get rid of everything unnecessary
--improve bot ui and ux, better color theme (consistent) and overall appearance, use keyboard buttons https://core.telegram.org/bots/features 
--better language while interacting with the user, remove em marks "-", use plain and simple language but not rude
--i want to be able chat with a model directly when i type something or ask. it should have the tools to answer my question by querying my data if necessary [ future]
-- i should be able to edit/remove my meal enties for today, including adjusting water intake. summary button can bring up edit after we click.
