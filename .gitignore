@@ -1,0 +1,27 @@
+# research PDFs: large, and mostly publisher-licensed
+/papers
+
+# secrets. .env.example is the committed template.
+.env
+.local.env
+*.env
+!.env.example
+
+# data that must never leave the device
+/data/
+/eval/photos/
+/eval/results/
+/eval/truth.csv
+/eval/dinnerware.json
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# macos
+.DS_Store

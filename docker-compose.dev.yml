@@ -1,0 +1,58 @@
+# Local development: Postgres, plus pgAdmin for looking at the data. The
+# application runs on the host with hot reload, because containerising it during
+# development costs a rebuild on every edit and buys nothing.
+#
+# Port 5433, not 5432, so a local Postgres install cannot silently shadow this.
+#
+# pgAdmin is deliberately absent from docker-compose.yml (the Pi). That file
+# runs against real health data on a machine reachable over a tailnet, and a
+# second web UI with database credentials in it is attack surface bought for
+# nothing: the same inspection can be done there with `just psql` over ssh.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: umai
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: umai
+    ports: ["5433:5432"]
+    volumes: ["umai_dev_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umai"]
+      interval: 5s
+
+  # http://localhost:5050 — no login, the server is pre-registered, the password
+  # comes from a mounted pgpass. Three things that each otherwise cost a small
+  # ritual every time the volume is recreated.
+  pgadmin:
+    image: dpage/pgadmin4:9.17
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      # Required by the image even in desktop mode, where they are never used
+      # as a login. Not secrets; this service is bound to localhost.
+      # pgAdmin validates this address and, if it dislikes it, restarts in a
+      # loop rather than reporting the problem. It rejects "umai@localhost"
+      # (no dot) and "dev@umai.local" (.local is a reserved name), so this is
+      # a real-looking TLD. Nothing is ever sent to it.
+      PGADMIN_DEFAULT_EMAIL: dev@umai.dev
+      PGADMIN_DEFAULT_PASSWORD: dev
+      # Desktop mode: no pgAdmin account, no master password prompt. Correct
+      # for a single-user tool on a loopback port, and wrong for anything else.
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      # Half a minute of staring at a spinner, saved.
+      PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED: "False"
+    # Loopback only. pgAdmin holds the database password and answers to anyone
+    # who can reach the port; on a café network 0.0.0.0 would hand it over.
+    ports: ["127.0.0.1:5050:80"]
+    volumes:
+      - ./ops/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./ops/pgadmin/pgpass:/pgpass:ro
+      - ./sql:/sql:ro
+      - umai_pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+
+volumes:
+  umai_dev_data:
+  umai_pgadmin_data:

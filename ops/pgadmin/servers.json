@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "umai (dev)",
+      "Group": "Umai",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "umai",
+      "Username": "umai",
+      "PassFile": "/pgpass",
+      "SSLMode": "prefer",
+      "Comment": "The dev database. Reached over the compose network as db:5432, which is the same Postgres the host sees on localhost:5433."
+    }
+  }
+}

@@ -1,0 +1,42 @@
+# The app in a container, on the Mac, against the dev database.
+#
+# This is the "run the production image locally" step from
+# technical-implementation.md section 11: it catches the whole class of
+# "works on the host, fails in the container" problems while the logs are still
+# on your screen, before anything reaches the Pi.
+#
+# Differences from docker-compose.yml (the Pi file), and why:
+#   * build: .            — no registry round-trip for a local run
+#   * no db service       — it uses the dev Postgres from
+#                           docker-compose.dev.yml (port 5433, with the
+#                           schema, foods and history already in it)
+#   * DATABASE_URL points at host.docker.internal, not localhost
+#   * UMAI_HTTP_HOST=0.0.0.0 inside the container; the port mapping keeps it
+#     host-only. Binding 127.0.0.1 inside a container would be unreachable.
+#
+# Migrations still run as an explicit one-shot, never on start:
+#   docker compose -f docker-compose.app.yml run --rm app alembic upgrade head
+services:
+  app:
+    build: .
+    image: umai:local
+    restart: unless-stopped
+    env_file: [.local.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://umai:dev@host.docker.internal:5433/umai
+      UMAI_HTTP_HOST: 0.0.0.0
+      # The scheduler's cron reads this; unset, the container is UTC and the
+      # 21:30 summary fires at 00:30 local.
+      TZ: ${TZ:-Europe/Istanbul}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data/media:/app/data/media
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

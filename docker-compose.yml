@@ -1,0 +1,42 @@
+# Production: the Raspberry Pi. Both the Mac and the Pi are arm64, so the image
+# built on one runs unmodified on the other.
+#
+# Migrations are NOT run on container start. A crash loop would otherwise become
+# a migration loop against real data. `just deploy` runs them as a one-shot step.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: umai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: umai
+    volumes: ["umai_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umai"]
+      interval: 10s
+
+  app:
+    image: ${UMAI_IMAGE:-ghcr.io/OWNER/umai:latest}
+    restart: unless-stopped
+    env_file: [.env]
+    # Load-bearing, not cosmetic. The scheduler's cron trigger reads it (via
+    # Settings.tz) to decide when "21:30 local" is; unset, the container is UTC
+    # and the evening summary arrives at half past midnight.
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    volumes: ["${MEDIA_DIR:-./data/media}:/app/data/media"]
+    # Bound to the tailnet interface rather than 0.0.0.0: the ingest endpoint
+    # and the Mini App are reachable over Tailscale, with no port opened.
+    ports: ["127.0.0.1:8000:8000"]
+
+volumes:
+  umai_data:
