@@ -22,7 +22,7 @@ references `papers/fetch.py`; neither exists. `papers/Insights.md` is empty.
 
 ## Current state (2026-08-22)
 
-Built, lint/mypy clean, 115 tests green (unit + Postgres integration): clock, settings, full
+Built, lint/mypy clean, 200 tests green (unit + Postgres integration): clock, settings, full
 schema + two migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
 stage-3 compute, four food importers, trend/EWMA, safety rails, calibration, correlations,
 health ingest, `tools/simulate.py`, **and the bot stack**: `core/tools.py` (write/read paths),

@@ -29,7 +29,9 @@ from umai.core import cuisines as cuisines_mod
 from umai.db.models import (
     EntryKind,
     EntrySource,
+    Food,
     FoodItem,
+    FoodState,
     LogEntry,
     Media,
 )
@@ -37,6 +39,8 @@ from umai.db.session import session_scope
 from umai.perception import images as image_tools
 from umai.perception import prompt as prompt_mod
 from umai.perception.client import PerceptionClient
+from umai.resolver.compute import FoodLike
+from umai.resolver.match import Resolver
 from umai.telegram import keyboards
 
 log = logging.getLogger(__name__)
@@ -45,9 +49,11 @@ router = Router(name="umai")
 
 
 class Awaiting(StatesGroup):
-    """The chat is waiting for one number: grams, a weigh-in, or new ml."""
+    """The chat is waiting for one number: grams, a weigh-in, new ml, or a
+    recipe ingredient."""
 
     number = State()
+    recipe_ingredients = State()
 
 
 def _sender_id(message: Message) -> int:
@@ -175,6 +181,415 @@ async def cuisine_done(callback: CallbackQuery, settings: Settings, clock: Clock
         with contextlib.suppress(Exception):
             await attached.edit_text(f"Cooking with: {named}\n\nChange it any time with /cuisines.")
     await callback.answer()
+
+
+# --- dinnerware calibration ---------------------------------------------------
+#
+# Measured once with a bank card beside the plate. The vision prompt uses these
+# as the primary scale reference, roughly halving portion error (papers A04).
+
+
+_DINNERWARE_BLURB = (
+    "Your dinnerware, measured once so I can estimate portions from photos.\n\n"
+    "To add: /dinnerware dinner plate: 26cm diameter\n"
+    "To remove: tap the item below.\n\n"
+    "How to measure: place a bank card (8.5cm) beside the item and compare, "
+    "or use a tape measure. One measurement per item, remembered forever."
+)
+
+
+@router.message(Command("dinnerware"))
+async def dinnerware_command(
+    message: Message, settings: Settings, clock: Clock
+) -> None:
+    """Manage dinnerware measurements.
+
+    Free-text add via `/dinnerware name: description`, or view and remove
+    existing items via the inline list. No FSM: the format is simple enough
+    to parse from a single message.
+    """
+    text = message.text or ""
+    # Strip the command prefix and any bot mention
+    raw = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
+
+    if ":" in raw:
+        # Add mode: "dinner plate: 26cm diameter"
+        name, desc = raw.split(":", 1)
+        name = name.strip()
+        desc = desc.strip()
+        if not name or not desc:
+            await message.answer(
+                "Format: /dinnerware name: description\n"
+                "Example: /dinnerware dinner plate: 26cm diameter"
+            )
+            return
+        async with session_scope() as session:
+            user = await tools.get_or_create_user(
+                session, settings, _sender_id(message), clock=clock
+            )
+            await tools.add_dinnerware(session, user.id, name, desc)
+            items = await tools.list_dinnerware(session, user.id)
+        await message.answer(
+            f"Saved: {name}: {desc}\n\n"
+            + _dinnerware_list_text(items)
+        )
+        return
+
+    # View mode
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(session, settings, _sender_id(message), clock=clock)
+        items = await tools.list_dinnerware(session, user.id)
+    if not items:
+        await message.answer(_DINNERWARE_BLURB)
+        return
+    await message.answer(
+        _dinnerware_list_text(items),
+        reply_markup=keyboards.dinnerware_list(items),
+    )
+
+
+def _dinnerware_list_text(items: dict[str, str]) -> str:
+    if not items:
+        return "No dinnerware saved yet."
+    lines = "\n".join(f"  {k}: {v}" for k, v in items.items())
+    return f"Your dinnerware:\n{lines}\n\nAdd more: /dinnerware name: description"
+
+
+@router.callback_query(F.data.startswith("dw:"))
+async def dinnerware_remove(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+    """Remove a dinnerware item from the inline list."""
+    name = _cb_data(callback).split(":", 1)[1]
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        removed = await tools.remove_dinnerware(session, user.id, name)
+        items = await tools.list_dinnerware(session, user.id)
+    attached = _cb_message(callback)
+    if attached is not None:
+        if items:
+            with contextlib.suppress(Exception):
+                await attached.edit_text(
+                    _dinnerware_list_text(items),
+                    reply_markup=keyboards.dinnerware_list(items),
+                )
+        else:
+            with contextlib.suppress(Exception):
+                await attached.edit_text("All dinnerware removed.")
+    await callback.answer(f"Removed {name}" if removed else "Not found")
+
+
+# --- recipe creation -----------------------------------------------------------
+#
+# Schema, resolver and compute all exist; this wires them to chat.
+# Flow: /recipe <name> → add ingredients one per message → /done to compute.
+
+
+@router.message(Command("recipe"))
+async def recipe_command(
+    message: Message, state: FSMContext, settings: Settings, clock: Clock
+) -> None:
+    """Start building a recipe. Name is required, ingredients follow."""
+    text = message.text or ""
+    name = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
+    if not name:
+        await message.answer(
+            "Give the recipe a name.\n"
+            "Example: /recipe my lentil soup"
+        )
+        return
+    await state.set_state(Awaiting.recipe_ingredients)
+    await state.update_data(
+        recipe_name=name,
+        recipe_ingredients=[],
+        recipe_cooked_grams=None,
+    )
+    await message.answer(
+        f"Building recipe: {name}\n\n"
+        "Add ingredients one at a time, like:\n"
+        "  lentils 200g\n"
+        "  onion 100g\n"
+        "  water 500ml\n\n"
+        "When done, send /done.\n"
+        "To cancel, send /cancel."
+    )
+
+
+async def _parse_ingredient(text: str) -> tuple[str, float, str] | None:
+    """Parse 'food_name 200g' or 'food_name 150ml' into (name, grams, state).
+
+    Returns None if the text doesn't match the expected format.
+    """
+    import re
+
+    _INGREDIENT_RE = re.compile(
+        r"^(.+?)\s+(\d+(?:\.\d+)?)\s*(g|ml|gram|grams|kilogram|kg)\s*$", re.I
+    )
+    m = _INGREDIENT_RE.match(text.strip())
+    if not m:
+        return None
+    raw_name = m.group(1).strip()
+    amount = float(m.group(2))
+    unit = m.group(3).lower()
+
+    if unit in ("ml",):
+        grams = amount  # density default 1.0
+        state = "liquid"
+    elif unit in ("kg", "kilogram"):
+        grams = amount * 1000
+        state = "unknown"
+    else:
+        grams = amount
+        state = "unknown"
+
+    return raw_name, grams, state
+
+
+@router.message(Awaiting.recipe_ingredients)
+async def recipe_ingredient_received(
+    message: Message, state: FSMContext, settings: Settings, clock: Clock
+) -> None:
+    """Handle each ingredient text, or /done, or /cancel."""
+    text = (message.text or "").strip()
+
+    if text.startswith("/cancel"):
+        await state.clear()
+        await message.answer("Recipe discarded.")
+        return
+
+    if text.startswith("/done"):
+        data = await state.get_data()
+        ingredients = data.get("recipe_ingredients", [])
+        if not ingredients:
+            await message.answer("Add at least one ingredient first.")
+            return
+        await state.update_data(recipe_cooked_grams="awaiting")
+        await message.answer(
+            "What does the finished dish weigh in grams?\n"
+            "This captures evaporation during cooking. Send just the number, "
+            "or /skip to use the raw total."
+        )
+        return
+
+    data = await state.get_data()
+    if data and data.get("recipe_cooked_grams") == "awaiting":
+        if text.startswith("/skip"):
+            cooked_grams = None
+        else:
+            try:
+                cooked_grams = float(text.replace(",", "."))
+                if cooked_grams <= 0:
+                    raise ValueError
+            except ValueError:
+                await message.answer("Send a positive number, or /skip.")
+                return
+        await state.update_data(recipe_cooked_grams=cooked_grams)
+        await _finish_recipe(message, state, settings, clock)
+        return
+
+    parsed = await _parse_ingredient(text)
+    if parsed is None:
+        await message.answer(
+            "I need a name and amount, like:\n"
+            "  lentils 200g\n  onion 100g\n  water 500ml\n\n"
+            "Or /done when finished."
+        )
+        return
+
+    raw_name, grams, state_val = parsed
+    ingredients = list(data.get("recipe_ingredients", []))
+    ingredients.append({"name": raw_name, "grams": grams, "state": state_val})
+    await state.update_data(recipe_ingredients=ingredients)
+    n = len(ingredients)
+    await message.answer(
+        f"Added: {raw_name} {grams:.0f}g ({n} ingredient{'s' if n != 1 else ''})\n"
+        "Next ingredient, or /done."
+    )
+
+
+async def _finish_recipe(
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+    clock: Clock,
+) -> None:
+    """Resolve all ingredients, create the Recipe row, compute per-100g."""
+    data = await state.get_data()
+    name = data["recipe_name"]
+    raw_ingredients = data["recipe_ingredients"]
+    cooked_grams = data.get("recipe_cooked_grams")
+
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(
+            session, settings, _sender_id(message), clock=clock
+        )
+        resolver = Resolver(session)
+
+        # Resolve each ingredient to a food row
+        resolved: list[tuple[uuid.UUID, float]] = []
+        unresolved: list[str] = []
+        for ing in raw_ingredients:
+            resolution = await resolver.resolve(
+                ing["name"], FoodState(ing["state"]), user.id
+            )
+            if resolution.food_id is not None:
+                resolved.append((resolution.food_id, ing["grams"]))
+            else:
+                unresolved.append(f'{ing["name"]} {ing["grams"]:.0f}g')
+
+        if unresolved:
+            await message.answer(
+                "I couldn't look up these ingredients in the food table:\n"
+                + "\n".join(f"  {u}" for u in unresolved)
+                + "\n\nLog them first (photo or text) so the table knows them, "
+                "then try again."
+            )
+            await state.clear()
+            return
+
+        if not resolved:
+            await message.answer("No valid ingredients found.")
+            await state.clear()
+            return
+
+        # Create the Recipe row
+        from umai.db.models import Recipe, RecipeIngredient
+
+        recipe = Recipe(
+            user_id=user.id,
+            name=name,
+            raw_input_grams=sum(g for _, g in resolved),
+            cooked_output_grams=cooked_grams,
+        )
+        session.add(recipe)
+        await session.flush()
+
+        for food_id, grams in resolved:
+            session.add(RecipeIngredient(
+                recipe_id=recipe.id,
+                food_id=food_id,
+                grams=grams,
+            ))
+        await session.flush()
+
+        # Compute per-100g profile
+        foods: list[tuple[FoodLike, float]] = []
+        for food_id, grams in resolved:
+            food = await session.get(Food, food_id)
+            if food is not None:
+                foods.append((food, grams))
+
+        from umai.resolver.compute import recipe_profile
+
+        profile = recipe_profile(foods, cooked_output_grams=cooked_grams)
+        recipe.kcal_per_100g = profile.kcal_per_100g
+        recipe.protein_g_per_100g = profile.protein_g_per_100g
+        recipe.carbs_g_per_100g = profile.carbs_g_per_100g
+        recipe.fat_g_per_100g = profile.fat_g_per_100g
+
+    await state.clear()
+    lines = "\n".join(
+        f"  {ing['name']} {ing['grams']:.0f}g" for ing in raw_ingredients
+    )
+    total_g = sum(ing["grams"] for ing in raw_ingredients)
+    yield_note = ""
+    if cooked_grams:
+        yield_note = f"\nCooked: {cooked_grams:.0f}g (yield {cooked_grams / total_g:.0%})"
+    await message.answer(
+        f"Recipe: {name}\n\n"
+        f"{lines}\n\n"
+        f"Total: {total_g:.0f}g{yield_note}\n"
+        f"Per 100g: {profile.kcal_per_100g:.0f} kcal, "
+        f"P {profile.protein_g_per_100g:.0f}g, "
+        f"C {profile.carbs_g_per_100g:.0f}g, "
+        f"F {profile.fat_g_per_100g:.0f}g\n\n"
+        "Now if I see this dish in a photo I'll recognise it by name."
+    )
+
+
+# --- food library one-tap ------------------------------------------------------
+#
+# The library fills as the user logs. This surfaces the most frequent items
+# for one-tap re-logging with the typical portion.
+
+
+@router.message(Command("library"))
+async def library_command(
+    message: Message, settings: Settings, clock: Clock
+) -> None:
+    """Show the user's most frequent foods for one-tap re-logging."""
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(
+            session, settings, _sender_id(message), clock=clock
+        )
+        items = await tools.user_library(session, user.id)
+    if not items:
+        await message.answer(
+            "Your food library is empty. Log a few meals and I'll remember "
+            "the ones you eat often."
+        )
+        return
+    await message.answer(
+        "Tap to log again with your usual portion:",
+        reply_markup=keyboards.library_items(items),
+    )
+
+
+@router.callback_query(F.data.startswith("lib:"))
+async def library_quick_log(
+    callback: CallbackQuery, settings: Settings, clock: Clock, models: ModelClient
+) -> None:
+    """One-tap log from the library. Uses the typical portion."""
+    food_id_str = _cb_data(callback).split(":", 1)[1]
+    try:
+        food_id = uuid.UUID(food_id_str)
+    except ValueError:
+        await callback.answer("Invalid item.", show_alert=True)
+        return
+
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(
+            session, settings, callback.from_user.id, clock=clock
+        )
+        food = await session.get(Food, food_id)
+        if food is None:
+            await callback.answer("That food no longer exists.", show_alert=True)
+            return
+
+        # Get typical grams from portion priors, default to 100g
+        priors = await tools.portion_priors(session, user.id)
+        typical = priors.get(food.canonical_name_en, (100.0, 100.0, 100.0))[0]
+
+        from umai.db.models import GramsSource, ResolutionMethod
+        from umai.resolver.match import Resolution
+
+        resolution = Resolution(
+            food_id=food_id,
+            recipe_id=None,
+            display_name=food.canonical_name_en,
+            method=ResolutionMethod.library,
+            confidence=1.0,
+        )
+        meal = await tools.log_food_items(
+            session,
+            user.id,
+            [
+                tools.ItemToLog(
+                    detected_name=food.canonical_name_en,
+                    detected_state=FoodState(food.state.value if food.state else "unknown"),
+                    grams=typical,
+                    grams_source=GramsSource.user,
+                    grams_confidence=1.0,
+                    resolution=resolution,
+                )
+            ],
+            occurred_at=clock.now(),
+            source=EntrySource.button,
+        )
+    await callback.answer(f"Logged {food.canonical_name_en} ({typical:.0f}g)")
+    # Update the message with the logged result
+    attached = _cb_message(callback)
+    if attached is not None:
+        with contextlib.suppress(Exception):
+            await attached.edit_text(tools.format_meal(meal))
 
 
 # --- the persistent menu (reply keyboard) ---------------------------------------

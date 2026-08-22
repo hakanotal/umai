@@ -16,8 +16,12 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Calibration engine + simulator**: k/TDEE fit, `reported_intake_target()` as the supported output (k and TDEE individually unidentifiable, documented), safety floors in code. Simulator-tested, deliberately not yet connected to the bot.
 - **Correlations module**: pre-declared pairings, Holm correction, 50-seed noise property test.
 - **First Docker session audit**: every finding fixed (A1–A6, B1–B8, C1–C6, D1–D9, E1–E4; D10 deliberately unchanged, documented).
-- **UI/UX overhaul** (this session): persistent reply keyboard (💧 250/500 ml, 📊 Today, ✏️ Edit today, ⚖️ Weigh in) matched before the intent classifier so button taps never cost a model call; `/help` and `/edit`; edit/remove flow for today's entries — per-item gram fixes, whole-meal removal with confirm, water amount edit — with the photo archive and supersede-chain invariants protected; brand palette sampled from the logo (`src/umai/theme.py`) applied to the charts; copy pass (plain language, no em dashes).
-- **194 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
+- **UI/UX overhaul**: persistent reply keyboard (💧 250/500 ml, 📊 Today, ✏️ Edit today, ⚖️ Weigh in) matched before the intent classifier so button taps never cost a model call; `/help`, `/edit`, `/dinnerware`, `/recipe`, `/library` commands; edit/remove flow for today's entries — per-item gram fixes, whole-meal removal with confirm, water amount edit — with the photo archive and supersede-chain invariants protected; brand palette sampled from the logo (`src/umai/theme.py`) applied to the charts; copy pass (plain language, no em dashes).
+- **Photo caption as context**: when a user sends a photo with a caption (e.g. "lahmacun"), the caption is injected into the vision prompt via `PromptContext.note` and into the resolver's tiebreak LLM message as advisory context.
+- **Dinnerware calibration** (`/dinnerware`): measured once with a bank card beside the plate, stored per-user, injected into every photo prompt as the primary scale reference. CRUD via `/dinnerware name: description` with inline remove buttons.
+- **Recipe creation** (`/recipe`): schema, resolver tier, and compute path all existed; now wired to chat. Name the recipe, add ingredients one per message, optional cooked weight for yield factor, per-100g profile computed and stored.
+- **Food library one-tap** (`/library`): surfaces the user's most frequent foods with typical portions for one-tap re-logging.
+- **200 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
 
 ## In progress
 
@@ -26,10 +30,7 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 
 ## Todo
 
-- **Voice notes** — the largest Phase 1 gap; plan calls it the lowest-friction capture method. No `F.voice` handler exists.
-- **Recipes** — schema, resolver tier and compute path all exist; nothing can create one from chat.
-- **Meal-from-library one-tap** — the library fills, nothing surfaces it yet.
-- **Dinnerware calibration flow** — read into every prompt, written by nothing; highest value-per-effort portion anchor.
+- **Voice notes** — the largest Phase 1 gap; plan calls it the lowest-friction capture method. Needs a transcription model choice (local Whisper vs OpenRouter audio model) and audio download handling.
 - **Eval ground truth** — weigh the 20 photos' items so bias (not just variance) can be measured and model changes ranked.
 - **USDA full import** — free API key (https://fdc.nal.usda.gov/api-key-signup.html), then `tools/seed_foods.py --source usda`. TurKomp CSV still to be filled (~150–300 dishes).
 - **Label-photo and barcode import reachable from chat** — both written, neither wired to a handler.
@@ -38,4 +39,3 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Mini App frontend, weekly review, correlations UI, export, cost reporting** — Phase 4.
 - **Pi deploy** when stable (same image, `UMAI_ENV=prod`, webhook + Tailscale); then backups.
 - **Stubs**: `tools/replay_health.py`, `tools/benchmark_perception.py`.
-- **Git**: repo still has no commits; commit when ready.

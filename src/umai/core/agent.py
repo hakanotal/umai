@@ -157,6 +157,8 @@ Commands:
 /week: the last seven days
 /edit: fix or remove today's entries
 /cuisines: what you usually eat
+/dinnerware: plate sizes for better portion estimates
+/recipe: save a dish you cook often
 """
 
 

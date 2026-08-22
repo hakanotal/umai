@@ -423,6 +423,124 @@ async def portion_priors(
 
 
 # ---------------------------------------------------------------------------
+# Food library: the user's most-logged items, surfaced for one-tap re-logging
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class LibraryItem:
+    """A food the user has logged before, with its typical serving."""
+
+    food_id: uuid.UUID
+    name: str
+    typical_grams: float
+    times_logged: int
+
+
+async def user_library(
+    session: AsyncSession, user_id: uuid.UUID, limit: int = 8
+) -> list[LibraryItem]:
+    """Most frequent library items, with typical grams from portion priors.
+
+    Returns up to `limit` items, ordered by times_logged descending. Foods
+    without a portion prior get 100g as default.
+    """
+    from umai.db.models import FoodLibrary, PortionPrior
+
+    stmt = (
+        select(
+            FoodLibrary.food_id,
+            FoodLibrary.display_name,
+            FoodLibrary.times_logged,
+            PortionPrior.median_grams,
+        )
+        .outerjoin(
+            PortionPrior,
+            (PortionPrior.food_id == FoodLibrary.food_id)
+            & (PortionPrior.user_id == FoodLibrary.user_id),
+        )
+        .where(FoodLibrary.user_id == user_id)
+        .order_by(FoodLibrary.times_logged.desc())
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        LibraryItem(
+            food_id=r.food_id,
+            name=r.display_name,
+            typical_grams=float(r.median_grams) if r.median_grams else 100.0,
+            times_logged=r.times_logged,
+        )
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Dinnerware: measured once, used in every photo prompt
+# ---------------------------------------------------------------------------
+
+
+async def add_dinnerware(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
+    description: str,
+) -> str:
+    """Add or update a dinnerware item. Returns a confirmation string."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from umai.db.models import Dinnerware
+
+    await session.execute(
+        pg_insert(Dinnerware)
+        .values(user_id=user_id, name=name, description=description)
+        .on_conflict_do_update(
+            index_elements=["user_id", "name"],
+            set_={"description": description},
+        )
+    )
+    return f"{name}: {description}"
+
+
+async def remove_dinnerware(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
+) -> bool:
+    """Remove a dinnerware item by name. Returns True if something was deleted."""
+    from umai.db.models import Dinnerware
+
+    existing = (
+        await session.execute(
+            select(Dinnerware.id).where(
+                Dinnerware.user_id == user_id, Dinnerware.name == name
+            )
+        )
+    ).first()
+    if existing is None:
+        return False
+    await session.execute(
+        delete(Dinnerware).where(Dinnerware.user_id == user_id, Dinnerware.name == name)
+    )
+    return True
+
+
+async def list_dinnerware(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> dict[str, str]:
+    """All dinnerware items for this user, name -> description."""
+    from umai.db.models import Dinnerware
+
+    rows = (
+        await session.execute(
+            select(Dinnerware).where(Dinnerware.user_id == user_id).order_by(Dinnerware.name)
+        )
+    ).scalars()
+    return {d.name: d.description for d in rows}
+
+
+# ---------------------------------------------------------------------------
 # Corrections: immutable, traceable
 # ---------------------------------------------------------------------------
 

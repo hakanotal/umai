@@ -30,7 +30,7 @@ from aiogram.types import (
 )
 
 from umai.core.cuisines import CUISINES
-from umai.core.tools import TodayEntry
+from umai.core.tools import LibraryItem, TodayEntry
 
 WATER = "💧"
 SCALE = "⚖️"
@@ -178,4 +178,32 @@ def cuisines(selected: Iterable[str]) -> InlineKeyboardMarkup:
     ]
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton(text="Done", callback_data="cuisine_done")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def dinnerware_list(items: dict[str, str]) -> InlineKeyboardMarkup:
+    """Each dinnerware item as a remove button. Tap to delete."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{BASKET} {name}: {desc}",
+                callback_data=f"dw:{name}",
+            )
+        ]
+        for name, desc in items.items()
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def library_items(items: list[LibraryItem]) -> InlineKeyboardMarkup:
+    """One-tap re-log for frequent foods. Shows name and typical grams."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{CHECK} {item.name} ({item.typical_grams:.0f}g)",
+                callback_data=f"lib:{item.food_id}",
+            )
+        ]
+        for item in items
+    ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
