@@ -920,6 +920,110 @@ async def day_totals(
     )
 
 
+# ---------------------------------------------------------------------------
+# Steps: the activity signal, read per local day
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DaySteps:
+    """One local day's step count, with enough context to distrust it.
+
+    `samples` is not decoration. Health Auto Export can deliver hourly buckets
+    or one daily total, and a daily total is stamped at local midnight — the
+    same timestamp as the 00:00-01:00 hourly bucket. Switching the automation's
+    aggregation from hourly to daily therefore overwrites one row with the whole
+    day's figure while the other 23 survive, producing a day worth roughly twice
+    its truth with nothing in the schema able to see it. A day that reads
+    `samples = 24` for a fortnight and then `samples = 25` is that switch, made
+    visible on the first screen anyone looks at.
+    """
+
+    date: dt.date
+    steps: int
+    samples: int
+    suspect: bool
+
+
+# Nobody walks this far. The per-sample gate in ingest/health.py cannot catch a
+# *day* that sums absurdly because two aggregation granularities overlap, so the
+# same ceiling is applied again to the total.
+MAX_PLAUSIBLE_DAILY_STEPS = 100_000
+
+
+async def steps_by_day(
+    session: AsyncSession,
+    user: User,
+    clock: Clock,
+    start: dt.date,
+    end: dt.date,
+) -> dict[dt.date, DaySteps]:
+    """Steps per local day across an inclusive date range.
+
+    Grouped by the *local* date, via Postgres `timezone()`, which uses the tz
+    database and is therefore DST-correct and agrees with `clock.day_bounds` by
+    construction. Grouping on `date_trunc('day', recorded_at)` would give UTC
+    days, which is the precise bug the whole timezone convention exists to
+    prevent: a 23:30 Istanbul sample is 20:30 UTC and belongs to the day it was
+    walked, not the one after.
+
+    Days with no samples are absent from the mapping rather than present as
+    zero. See `daily_steps` for why that distinction is load-bearing.
+    """
+    from umai.db.models import HealthMetric
+
+    # Bound the scan on the indexed column so ix_health_user_metric_time is
+    # usable; the grouping expression alone would force a sequential scan.
+    window_start, _ = day_bounds(start, user.tz)
+    _, window_end = day_bounds(end, user.tz)
+
+    local_day = func.date(func.timezone(user.tz, HealthMetric.recorded_at))
+    stmt = (
+        select(
+            local_day.label("day"),
+            func.sum(HealthMetric.value).label("steps"),
+            func.count().label("samples"),
+        )
+        .where(
+            HealthMetric.user_id == user.id,
+            HealthMetric.metric == "steps",
+            HealthMetric.recorded_at >= window_start,
+            HealthMetric.recorded_at < window_end,
+        )
+        .group_by(local_day)
+    )
+
+    out: dict[dt.date, DaySteps] = {}
+    for row in (await session.execute(stmt)).all():
+        total = int(row.steps or 0)
+        out[row.day] = DaySteps(
+            date=row.day,
+            steps=total,
+            samples=int(row.samples),
+            suspect=total > MAX_PLAUSIBLE_DAILY_STEPS,
+        )
+    return out
+
+
+async def daily_steps(
+    session: AsyncSession, user: User, clock: Clock, day: dt.date | None = None
+) -> DaySteps | None:
+    """Steps for one local day, or None when the phone delivered nothing.
+
+    **None and zero are different answers and must never be collapsed.** None
+    means "no data, assume a typical day", which is what
+    `analytics.calibration.activity_offset_kcal` does with it. Zero means a day
+    genuinely spent sitting down, which at 90kg is an offset of about -360 kcal.
+    A day the phone failed to sync, reported as zero, would tell the calibration
+    engine the user was bedbound and bias every fit containing it.
+
+    Delegates to `steps_by_day` so there is one query and one bucketing rule
+    rather than two that drift apart.
+    """
+    target = day or today(clock, user.tz)
+    return (await steps_by_day(session, user, clock, target, target)).get(target)
+
+
 async def latest_weight(session: AsyncSession, user_id: uuid.UUID) -> float | None:
     """Most recent weight, whether it arrived by button or by health sync."""
     return (await _weight_rows(session, user_id, 1))[0]
@@ -1047,8 +1151,20 @@ def format_entry(user: User, entry: LogEntry) -> str:
     )
 
 
-def format_day(user: User, totals: DayTotals, target: safety.TargetDecision | None) -> str:
-    """The one summary formatter. Deterministic, in code, no model call."""
+def format_day(
+    user: User,
+    totals: DayTotals,
+    target: safety.TargetDecision | None,
+    *,
+    steps: DaySteps | None = None,
+) -> str:
+    """The one summary formatter. Deterministic, in code, no model call.
+
+    Steps appear as context and nothing more. The plan's standing rule is that
+    activity never adds calories back to the budget — "you earned 400 more
+    calories" is named there as the single most reliable way to erase a deficit
+    — so the number is shown beside the target, never folded into it.
+    """
     lines = [
         f"Today: {totals.kcal:.0f} kcal"
         + (f" of {target.kcal_target}" if target else "")
@@ -1062,6 +1178,16 @@ def format_day(user: User, totals: DayTotals, target: safety.TargetDecision | No
             lines.append(f"{-left:.0f} kcal over, protein target {target.protein_target_g}g")
     if totals.water_ml:
         lines.append(f"Water {totals.water_ml:.0f} ml")
+    if steps is not None:
+        if steps.suspect:
+            # Printing a number here would be worse than printing nothing: it
+            # would look like data. See DaySteps on how this happens.
+            lines.append(
+                f"Steps look wrong today ({steps.samples} readings) — "
+                "check the export settings."
+            )
+        else:
+            lines.append(f"Steps {steps.steps:,}")
     if totals.unmatched_items:
         lines.append(
             f"⏳ {totals.unmatched_items} item(s) not yet in the food table, so "

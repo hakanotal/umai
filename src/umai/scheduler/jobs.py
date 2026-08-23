@@ -89,7 +89,8 @@ async def evening_summary(session_factory, settings, clock: Clock, send) -> None
 
         days, kcal, _protein = await _last_days(session, user, clock, 7)
         png = charts_mod.week_kcal(days, kcal, target.kcal_target if target else None)
-        caption = tools.format_day(user, totals, target)
+        steps = await tools.daily_steps(session, user, clock)
+        caption = tools.format_day(user, totals, target, steps=steps)
         await send(png, caption)
 
 

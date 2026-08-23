@@ -324,7 +324,8 @@ async def summary_line(session: AsyncSession, user: User, clock: Clock) -> str:
             target = tools.current_target(user, weight, clock)
         except RuntimeError:
             target = None
-    return tools.format_day(user, totals, target)
+    steps = await tools.daily_steps(session, user, clock)
+    return tools.format_day(user, totals, target, steps=steps)
 
 
 async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:

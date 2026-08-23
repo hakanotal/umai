@@ -34,8 +34,13 @@ services:
       retries: 3
       start_period: 20s
     volumes: ["${MEDIA_DIR:-./data/media}:/app/data/media"]
-    # Bound to the tailnet interface rather than 0.0.0.0: the ingest endpoint
-    # and the Mini App are reachable over Tailscale, with no port opened.
+    # Loopback on purpose, and this is NOT the tailnet — an earlier version of
+    # this comment claimed it was, which described a security property the file
+    # did not have. Tailnet exposure is `tailscale serve` on the host, proxying
+    # to this port, so the container never binds an interface the LAN can see:
+    #   tailscale serve --bg --set-path /ingest/health http://127.0.0.1:8000/ingest/health
+    # Path-scoped deliberately: a bare proxy would also publish /webhook/telegram
+    # and /healthz to every device on the tailnet.
     ports: ["127.0.0.1:8000:8000"]
 
 volumes:

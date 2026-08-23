@@ -23,6 +23,7 @@ the supersede chain — and getting that filter wrong is the difference between
 | `corrections.sql` | Every correction, with what it changed |
 | `spend.sql` | API cost by day, task and model |
 | `health.sql` | What Health Auto Export has delivered |
+| `steps.sql` | Steps per local day, with the sample count that reveals a granularity switch |
 | `row-counts.sql` | One line per table — the "is anything in here" query |
 
 ## The one rule when writing your own

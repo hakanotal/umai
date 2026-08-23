@@ -30,6 +30,9 @@ services:
       TZ: ${TZ:-Europe/Istanbul}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Loopback. To let the phone reach the ingest endpoint over Tailscale,
+    # proxy to it from the host rather than widening this bind:
+    #   tailscale serve --bg --set-path /ingest/health http://127.0.0.1:8000/ingest/health
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

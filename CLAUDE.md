@@ -64,7 +64,19 @@ hand-transcribed Foundation rows so the resolver works before a real USDA key ar
 (DEMO_KEY is throttled to uselessness; free key: https://fdc.nal.usda.gov/api-key-signup.html,
 then `--source usda`).
 
-Not yet written: Mini App frontend, `tools/replay_health.py`, `tools/benchmark_perception.py`.
+**Steps** land via Health Auto Export over `tailscale serve` (never by widening the container's
+loopback bind) and are read per *local* day by `tools.daily_steps` / `tools.steps_by_day`,
+aggregated on the fly rather than materialised into `daily_rollups`, which stays unwritten.
+`DaySteps.samples` is the tripwire for an export-granularity switch, which would otherwise double
+a day silently. **`None` and `0` are different answers**: `calibration.activity_offset_kcal` reads
+None as "assume a typical 8,000-step day" and a real zero as about -350 kcal, so a day the phone
+failed to sync must never be reported as zero. Steps are shown beside the target and never folded
+into it — the plan's standing rule is that activity never adds calories back to the budget.
+**Trap for whoever wires steps into calibration:** `current_target` already applies a 1.4 activity
+multiplier, so feeding `activity_offset_kcal` in as well counts the same activity twice. Retire
+one of the two.
+
+Not yet written: Mini App frontend, `tools/benchmark_perception.py`.
 Analytics beyond the static Phase 1 target is deliberately deferred until real history exists
 (deployment target is the Pi; calibration needs weeks of data first).
 

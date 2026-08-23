@@ -39,3 +39,75 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Mini App frontend, weekly review, correlations UI, export, cost reporting** — Phase 4.
 - **Pi deploy** when stable (same image, `UMAI_ENV=prod`, webhook + Tailscale); then backups.
 - **Stubs**: `tools/replay_health.py`, `tools/benchmark_perception.py`.
+
+
+---
+
+## Steps: ingest wired end to end (2026-08-22, later)
+
+Everything from the phone to a number on screen, except the phone itself.
+
+**Read path.** `tools.daily_steps` and `tools.steps_by_day` in `core/tools.py`,
+grouping by the *local* date through Postgres `timezone()` so a 23:30 Istanbul
+sample counts on the day it was walked. Aggregated on the fly rather than
+materialised: `daily_rollups` stays unwritten, because backfill — the phone
+delivering three days at once — is a non-event for a query over `recorded_at`
+and an invalidation problem for a rollup. Two decisions carried in the types:
+
+  * **`None` is not `0`.** No data means "assume a typical day", which is what
+    `activity_offset_kcal` does with None; a real zero is about -350 kcal at
+    90kg. A failed sync reported as zero would tell the calibration engine the
+    user was bedbound.
+  * **`DaySteps.samples`** carries the row count, because an export-granularity
+    switch (hourly → daily) overwrites the midnight bucket with the whole day's
+    total while the other 23 rows survive, doubling the day with nothing in the
+    schema able to see it. A run of days reading 24 that suddenly reads 25 is
+    that switch, visible in `sql/steps.sql`.
+
+**Surfaced** as one line in `/summary` and the evening push, beside the target
+and never folded into it. A suspect day says so instead of printing a number.
+
+**`tools/replay_health.py` is written** (was a 7-line docstring). `--record`
+takes one POST on port 8010, saves the body verbatim, prints what the parser
+makes of it and exits; `--replay` feeds it through the real ingest path.
+Verified end to end against a synthetic payload: recorded, parsed, replayed,
+and the second replay wrote 0 and reported 2 duplicates.
+
+**Tests:** 206 green, up from 139. New ones cover multi-sample summation, both
+directions of the local-midnight boundary, `None` vs `0`, three-day backfill,
+cross-user and cross-metric leakage, aggregate-level idempotency, and a
+Europe/London DST transition — the only case that distinguishes a real
+tz-database lookup from a fixed offset.
+
+Fixed two pre-existing unscoped assertions in `test_ingest.py` that only passed
+against a virgin database; the replay run put real rows in the dev DB and they
+failed immediately. Same class as the `test_tools.py` one from the audit.
+
+**Reachability decided, not yet done:** `tailscale serve --set-path
+/ingest/health`, leaving both compose files on `127.0.0.1:8000:8000`. The false
+"bound to the tailnet interface" comment in `docker-compose.yml` is corrected —
+it described a security property the file did not have.
+
+### Still to do, in order
+
+1. Install Tailscale (not present on this Mac) on Mac + phone, enable MagicDNS
+   and HTTPS Certificates, run the `serve` command.
+2. Install Health Auto Export, configure one REST automation, **steps only,
+   hourly aggregation, split-by-source off**. REST export is a paid feature.
+3. `just record-health` against the manual export, commit the fixture, then
+   re-read the granularity question with a real payload in hand.
+
+On the resilience question: Tailscale means this works from any network, not
+only at home, and Health Auto Export pushes on its own schedule. A missed export
+heals on the next successful one — the endpoint upserts on a natural key, so a
+wide lookback re-sends are counted as duplicates rather than written twice.
+
+### One finding that is not about steps
+
+`users.tz` in the dev database is **`America/New_York`**, not `Europe/Istanbul`.
+It was set from the process timezone when the user row was first created. Every
+local-day boundary — food totals, `/summary`, the evening summary, and now steps
+— is computed from this column, while the scheduler's cron now fires on
+`settings.tz` (Europe/Istanbul). The two disagree by seven hours. Nothing in the
+step code assumes either; it reads `user.tz`. But the stored value needs to be
+whichever is actually right before any of these numbers mean anything.

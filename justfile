@@ -117,6 +117,17 @@ check-clock:
         | grep -v "src/umai/clock.py" \
         || (echo "wall clock used outside clock.py" && exit 1)
 
+# --- health ingest ---------------------------------------------------------
+
+# Capture one real Health Auto Export payload (port 8010) into tests/fixtures/.
+record-health:
+    uv run python tools/replay_health.py --record
+
+# Feed a saved payload through the real ingest path. Run twice: the second run
+# must write nothing.
+replay-health FILE:
+    uv run python tools/replay_health.py --replay {{FILE}}
+
 # --- evaluation ------------------------------------------------------------
 
 # Model preflight: live pricing, and a warning if a model lost a capability.

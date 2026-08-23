@@ -275,9 +275,41 @@ is no substitute for feeling how the interaction actually lands.
 ### 7.2 Health data
 
 **Tailscale is the answer, in dev and in prod.** Install it on the Mac, the Pi and the phone.
-Every device gets a stable address on your private tailnet. Health Auto Export then POSTs to
-`http://your-mac:8000/ingest/health` while you develop and to the Pi later, over an encrypted
-link, with no ports opened, no certificates and no tunnel service in the path.
+Every device gets a stable address on your private tailnet, with no ports opened and no tunnel
+service in the path.
+
+Do not widen the container's port binding to reach it. Both compose files publish
+`127.0.0.1:8000:8000` and should stay that way; the tailnet exposure is a proxy on the host:
+
+```bash
+tailscale serve --bg --set-path /ingest/health http://127.0.0.1:8000/ingest/health
+tailscale serve status      # prints the https://<host>.<tailnet>.ts.net URL
+```
+
+The flag spelling has moved between client versions, so `tailscale serve --help` outranks the
+line above; MagicDNS and HTTPS Certificates both need enabling in the admin console or `serve`
+will not bind TLS. The path scoping is deliberate — a bare proxy would publish `/webhook/telegram`
+and `/healthz` to every device on the tailnet as well. Widen it when the Mini App arrives.
+
+The alternative, publishing the container port on the host's `100.x` tailnet address, works but
+makes the compose file machine-specific, which is exactly the Mac-versus-Pi divergence the setup
+exists to avoid, and it gives plaintext HTTP where `serve` gives a real certificate. Binding
+`0.0.0.0` is worse still: the Pi sits on a home LAN, and the endpoint's only other protection is
+one static bearer token with no rate limiting.
+
+**Health Auto Export configuration.** One automation, REST API type, POST to
+`https://<host>.<tailnet>.ts.net/ingest/health`, with `Authorization: Bearer $HEALTH_INGEST_TOKEN`
+as a real header rather than a query parameter. Data type Health Metrics — workout payloads exist
+but `extract()` ignores them. **Aggregation hourly, chosen once and never changed:** an hourly
+bucket and a daily total both stamp local midnight, so switching later overwrites one hourly row
+with the whole day's figure while the other 23 survive, and the day reads roughly double. The
+`samples` column in `sql/steps.sql` is the tripwire that makes such a switch visible. The REST
+export is a paid feature; check the current price in the App Store rather than trusting a figure
+quoted here.
+
+Leave any "split by source" setting off. HealthKit already de-duplicates overlapping samples
+across devices when you read an aggregate; a per-source breakdown would put two rows on the same
+`(user, metric, recorded_at, source)` key, and the upsert would silently keep only the last.
 
 **Then record what arrives.** The first successful POST is worth capturing permanently:
 
