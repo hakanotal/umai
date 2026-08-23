@@ -608,7 +608,7 @@ def _gaps_stmt(limit: int) -> Select[Any]:
     )
     return (
         select(
-            FoodItem.detected_name,
+            func.lower(FoodItem.detected_name).label("detected_name"),
             FoodItem.detected_state,
             func.count().label("occurrences"),
         )
@@ -622,8 +622,8 @@ def _gaps_stmt(limit: int) -> Select[Any]:
             LogEntry.kind.in_((EntryKind.food, EntryKind.drink)),
             FoodItem.detected_name.not_in(exhausted),
         )
-        .group_by(FoodItem.detected_name, FoodItem.detected_state)
-        .order_by(func.count().desc(), FoodItem.detected_name)
+        .group_by(func.lower(FoodItem.detected_name), FoodItem.detected_state)
+        .order_by(func.count().desc(), func.lower(FoodItem.detected_name))
         .limit(limit)
     )
 
@@ -880,9 +880,11 @@ async def backfill(session: AsyncSession, gap: Gap, food: Food) -> int:
     touched — no gram value changes, nothing is superseded, and the arithmetic
     is the same `tools.macros_for_food` the original write used.
 
-    Matches on name alone, not name and state: the state that reached the model
-    is the state the row was created in, and an item logged as "unknown" that
-    resolved to a baked row is exactly the case this exists to fix.
+    Matches on name (case-insensitive) and state: different states have different
+    compositions, so "boiled rice" and "raw rice" are separate gaps. Items
+    detected as "unknown" are matched regardless of the gap's state, since an
+    item logged as "unknown" that resolved to a baked row is exactly the case
+    this exists to fix.
     """
     from umai.core.tools import macros_for_food
 

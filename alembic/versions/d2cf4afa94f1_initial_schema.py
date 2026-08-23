@@ -362,3 +362,14 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_api_usage_called_at'), table_name='api_usage')
     op.drop_table('api_usage')
     # ### end Alembic commands ###
+
+    # Drop enum types after all tables that reference them have been dropped.
+    for enum_name in (
+        "resolution_method",
+        "grams_source",
+        "entry_source",
+        "entry_kind",
+        "food_source",
+        "food_state",
+    ):
+        op.execute(f"DROP TYPE IF EXISTS {enum_name}")

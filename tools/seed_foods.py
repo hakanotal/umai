@@ -159,7 +159,9 @@ async def seed_usda(
                                 "carbs_g_per_100g",
                                 "fat_g_per_100g",
                                 "fiber_g_per_100g",
+                                "sugar_g_per_100g",
                                 "sodium_mg_per_100g",
+                                "density_g_per_ml",
                                 "aliases",
                             )
                         },
