@@ -61,6 +61,7 @@ from umai.telegram.handlers import (
     photo,
     recipes,
     text,
+    token,
 )
 from umai.telegram.handlers.menu import MENU_LABELS
 
@@ -82,6 +83,7 @@ APP_ROUTERS: tuple[Router, ...] = (
     menu.router,
     edit.router,
     confirm.router,
+    token.router,
     photo.router,
     text.router,
 )

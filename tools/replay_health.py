@@ -121,7 +121,7 @@ async def record(port: int, out_dir: Path) -> int:
     return 0
 
 
-async def replay(path: Path, dry_run: bool) -> int:
+async def replay(path: Path, dry_run: bool, telegram_id: int | None = None) -> int:
     payload = json.loads(path.read_text())  # noqa: ASYNC240 - one small local file
     print(f"{path.name}:")
     describe(payload)
@@ -137,12 +137,26 @@ async def replay(path: Path, dry_run: bool) -> int:
     init_engine(get_settings())
     try:
         async with session_scope() as session:
-            # Inlined rather than reusing web.api._single_user_id, which raises
-            # HTTPException — an exception type with no business in a CLI.
-            user_id = (await session.execute(select(User.id).limit(1))).scalar_one_or_none()
-            if user_id is None:
-                print("no user registered yet; send the bot a message first")
+            # Whose readings these are has to be said out loud now. This used
+            # to be `select(User.id).limit(1)`, which with two users in the
+            # database replays somebody's phone data into a stranger's health
+            # series — silently, and with no way to tell afterwards.
+            stmt = select(User.id, User.telegram_id).order_by(User.created_at)
+            if telegram_id is not None:
+                stmt = stmt.where(User.telegram_id == telegram_id)
+            rows = (await session.execute(stmt)).all()
+
+            if not rows:
+                print("no such user; send the bot a message first")
                 return 1
+            if len(rows) > 1:
+                print("more than one user — say which with --telegram-id:")
+                for _, tid in rows:
+                    print(f"  {tid}")
+                return 1
+
+            user_id, chosen = rows[0]
+            print(f"  replaying into telegram id {chosen}")
             report = await ingest(session, user_id, payload)
         print(f"  -> {report.summary}")
         for reason in report.rejects:
@@ -160,11 +174,17 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=RECORD_PORT)
     ap.add_argument("--out", type=Path, default=FIXTURES)
     ap.add_argument("--dry-run", action="store_true", help="parse only, no database")
+    ap.add_argument(
+        "--telegram-id",
+        type=int,
+        default=None,
+        help="whose health series to write into; required once there is more than one user",
+    )
     args = ap.parse_args()
 
     if args.record:
         return asyncio.run(record(args.port, args.out))
-    return asyncio.run(replay(Path(args.replay), args.dry_run))
+    return asyncio.run(replay(Path(args.replay), args.dry_run, args.telegram_id))
 
 
 if __name__ == "__main__":

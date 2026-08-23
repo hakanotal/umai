@@ -90,6 +90,9 @@ def configure_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🌍 Cuisines", callback_data="cfg:cuisines"),
             ],
             [
+                InlineKeyboardButton(text="📱 Health sync", callback_data="cfg:token"),
+            ],
+            [
                 InlineKeyboardButton(text="💧 Water target", callback_data="cfg:water"),
             ],
         ]

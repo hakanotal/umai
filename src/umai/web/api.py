@@ -1,8 +1,13 @@
 """Mini App backend. Telegram initData HMAC verification for auth.
 
-Phase 1 serves two routes: the Health Auto Export ingest endpoint (token
-auth, idempotent via ingest.health) and, in prod, the Telegram webhook that
-feeds the dispatcher. The Mini App frontend itself is Phase 4.
+Phase 1 serves two routes: the Health Auto Export ingest endpoint and, in prod,
+the Telegram webhook that feeds the dispatcher. The Mini App frontend itself is
+Phase 4.
+
+The ingest endpoint's bearer token is per user and is what decides whose health
+series a payload is written into. There is no longer a deployment-wide token in
+front of it: a shared gate adds nothing behind `tailscale serve` and guarantees
+that somebody eventually forgets to rotate it.
 """
 
 from __future__ import annotations
@@ -51,16 +56,30 @@ def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
         payload: dict,
         authorization: str = Header(default=""),
     ) -> JSONResponse:
-        """Health Auto Export lands here. Bearer-token authenticated, and the
-        idempotency lives in ingest.health rather than here so tests cover it."""
-        expected = f"Bearer {settings.health_ingest_token}"
-        if not settings.health_ingest_token or not hmac.compare_digest(authorization, expected):
+        """Health Auto Export lands here.
+
+        The bearer token identifies *which user* the payload belongs to. It
+        used to be one shared token for the whole deployment, with the readings
+        attributed to `select(User.id).limit(1)` — whichever row Postgres
+        happened to return first. With two users that writes one person's steps
+        and weight into the other's health series, and possession of the single
+        token grants that against either of them.
+
+        A miss is always 401 and never says which kind. Distinguishing "no such
+        token" from "that user is not active" turns the endpoint into an oracle
+        for enumerating tokens.
+
+        The idempotency lives in ingest.health rather than here, so the tests
+        cover it.
+        """
+        token = authorization.removeprefix("Bearer ").strip()
+        if not token:
             raise HTTPException(status_code=401, detail="bad token")
 
         from umai.db.session import session_scope
 
         async with session_scope() as session:
-            user_id = await _single_user_id(session)
+            user_id = await _user_for_token(session, token)
             report = await ingest(session, user_id, payload)
         return JSONResponse(
             {
@@ -90,17 +109,30 @@ def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
     return app
 
 
-async def _single_user_id(session) -> uuid.UUID:
-    """The health endpoint serves the household's one user; multi-user needs
-    the Phase 6 auth story before this becomes a route parameter."""
+async def _user_for_token(session, token: str) -> uuid.UUID:
+    """Whose health series this token writes into.
+
+    Compared with `hmac.compare_digest` rather than by SQL equality on the
+    token itself: an indexed `=` on a secret leaks its prefix through timing,
+    and the index is small enough that scanning the active rows costs nothing.
+    """
     from sqlalchemy import select
 
-    from umai.db.models import User
+    from umai.db.models import User, UserStatus
 
-    user = (await session.execute(select(User.id).limit(1))).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=409, detail="no user registered yet")
-    return user
+    rows = (
+        await session.execute(
+            select(User.id, User.health_token).where(
+                User.status == UserStatus.active,
+                User.health_token.is_not(None),
+            )
+        )
+    ).all()
+    for user_id, stored in rows:
+        if hmac.compare_digest(stored, token):
+            return uuid.UUID(str(user_id))
+    log.warning("health ingest rejected: unknown token")
+    raise HTTPException(status_code=401, detail="bad token")
 
 
 def verify_init_data(init_data: str, bot_token: str, max_age_s: int = 86400) -> dict:
