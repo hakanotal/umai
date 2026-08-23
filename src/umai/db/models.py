@@ -157,6 +157,10 @@ class User(Base):
     # difference between "flatbread with reddish paste" and "lahmacun", and
     # only the second one is a lookup key. Edited in chat with /cuisines.
     cuisines: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
+    # Daily water target in ml. None means "use the system default" (2500 ml).
+    # Editable in chat via the Configure menu; the evening summary and
+    # water reminders read it to decide whether to nudge.
+    water_target_ml: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[dt.datetime] = mapped_column(TS, server_default=func.now())
 
 

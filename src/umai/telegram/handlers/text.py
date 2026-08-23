@@ -36,7 +36,12 @@ async def text(message: Message, settings: Settings, clock: Clock, models: Model
         user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
         try:
             reply = await agent.handle_text(
-                session=session, models=models, user=user, clock=clock, text=message.text
+                session=session,
+                models=models,
+                user=user,
+                clock=clock,
+                text=message.text,
+                settings=settings,
             )
         except Exception:
             log.exception("text handling failed")

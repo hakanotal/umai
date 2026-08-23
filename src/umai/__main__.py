@@ -70,6 +70,21 @@ async def _send_summary(png: bytes, caption: str) -> None:
         await bot.session.close()
 
 
+async def _send_text(text: str) -> None:
+    """The scheduler's text send hook: plain text messages into chat."""
+    from umai.telegram.app import build_bot
+
+    settings = get_settings()
+    bot = build_bot(settings)
+    try:
+        await bot.send_message(
+            chat_id=next(iter(settings.allowed_user_ids)),
+            text=text,
+        )
+    finally:
+        await bot.session.close()
+
+
 async def amain() -> None:
     settings = get_settings()
 
@@ -110,7 +125,8 @@ async def amain() -> None:
         settings,
         SystemClock(),
         _send_summary,
-        models,
+        send_text=_send_text,
+        models=models,
         tz=await scheduling_tz(get_factory(), settings),
     )
     scheduler.start()

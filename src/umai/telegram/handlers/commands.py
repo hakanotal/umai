@@ -31,7 +31,7 @@ async def start(message: Message) -> None:
 async def today(message: Message, settings: Settings, clock: Clock) -> None:
     async with session_scope() as session:
         user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
-        text = await agent.summary_line(session, user, clock)
+        text = await agent.summary_line(session, user, clock, settings)
     await message.answer(text, reply_markup=keyboards.summary_actions())
 
 

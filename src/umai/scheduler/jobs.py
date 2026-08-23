@@ -15,6 +15,11 @@ The two have opposite idempotency needs, and get different mechanisms. The
 summary must happen exactly once per day, so it claims a (job, day) row. The
 enrichment sweep is meant to run many times a day and simply must not overlap
 itself, so it takes a Postgres advisory lock and the loser does nothing.
+
+Water reminders use (job, day) uniqueness like the summary, but allow up to
+three claims per day (water_reminder_1, water_reminder_2, water_reminder_3).
+Escalating intervals — 3 h, 6 h, 12 h — are enforced by checking how long
+has elapsed since the previous reminder, not by scheduling separate jobs.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ import datetime as dt
 import logging
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,7 +95,8 @@ async def evening_summary(session_factory, settings, clock: Clock, send) -> None
         days, kcal, _protein = await _last_days(session, user, clock, 7)
         png = charts_mod.week_kcal(days, kcal, target.kcal_target if target else None)
         steps = await tools.daily_steps(session, user, clock)
-        caption = tools.format_day(user, totals, target, steps=steps)
+        wt = tools.water_target(user, settings)
+        caption = tools.format_day(user, totals, target, steps=steps, water_target_ml=wt)
         await send(png, caption)
 
 
@@ -156,8 +162,103 @@ async def scheduling_tz(session_factory, settings) -> str:
     return tz or settings.tz
 
 
+# Water reminder escalation: hours to wait after each reminder before sending
+# the next. Three reminders total, then silence for the day.
+_WATER_REMINDER_DELTAS = [
+    dt.timedelta(hours=3),
+    dt.timedelta(hours=6),
+    dt.timedelta(hours=12),
+]
+_WATER_REMINDER_MESSAGES = [
+    "💧 Time to drink some water! You've had {logged:.0f} ml today, {remaining:.0f} ml to go.",
+    "💧 Still haven't hit your water target — {logged:.0f} ml logged,"
+    " {remaining:.0f} ml to go. Drink up!",
+    "💧 Last reminder: you're at {logged:.0f} ml out of {target:.0f} ml. Don't forget to hydrate!",
+]
+
+
+async def water_reminder(session_factory, settings, clock: Clock, send_text) -> None:
+    """Nudge the user to drink water with escalating intervals.
+
+    Fires every 3 hours during waking hours (10, 13, 16, 19, 22). The first
+    tick that finds the user below target sends reminder #1. Subsequent ticks
+    only send when enough time has elapsed since the last reminder (6 h after
+    #1, 12 h after #2). After 3 reminders the job stays silent for the day.
+
+    `send_text` is an async callable(str) so the job has no Telegram
+    dependency.
+    """
+    async with session_factory() as session:
+        user = (await session.execute(select(User).limit(1))).scalar_one_or_none()
+        if user is None:
+            return
+        day = today(clock, user.tz)
+
+        # How many reminders have already been sent today?
+        count = await _water_reminder_count(session, day)
+        if count >= len(_WATER_REMINDER_DELTAS):
+            return  # all three sent, done for the day
+
+        totals = await tools.day_totals(session, user, clock)
+        target = tools.water_target(user, settings)
+
+        if totals.water_ml >= target:
+            return  # already met the target, no reminder needed
+
+        # Enforce escalating delay: check that enough time has passed since
+        # the previous reminder.
+        if count > 0:
+            last_ran = await _water_reminder_last_ran(session, day)
+            if last_ran is None:
+                # Shouldn't happen (count > 0 implies a row exists), but be safe.
+                return
+            elapsed = clock.now() - last_ran
+            if elapsed < _WATER_REMINDER_DELTAS[count - 1]:
+                return  # too soon
+
+        # Send the reminder.
+        job_name = f"water_reminder_{count + 1}"
+        if not await claim(session, job_name, day):
+            return  # race condition: another instance already sent it
+
+        remaining = target - totals.water_ml
+        msg = _WATER_REMINDER_MESSAGES[count].format(
+            logged=totals.water_ml,
+            remaining=remaining,
+            target=target,
+        )
+        await send_text(msg)
+
+
+async def _water_reminder_count(session: AsyncSession, day: dt.date) -> int:
+    """Count water reminders sent on `day`."""
+    stmt = select(func.count(JobRun.id)).where(
+        JobRun.job.like("water_reminder_%"),
+        JobRun.day == day,
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def _water_reminder_last_ran(session: AsyncSession, day: dt.date) -> dt.datetime | None:
+    """The timestamp of the most recent water reminder on `day`."""
+    stmt = (
+        select(JobRun.ran_at)
+        .where(JobRun.job.like("water_reminder_%"), JobRun.day == day)
+        .order_by(JobRun.ran_at.desc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 def schedule(
-    scheduler, session_factory, settings, clock: Clock, send, models=None, tz: str | None = None
+    scheduler,
+    session_factory,
+    settings,
+    clock: Clock,
+    send,
+    send_text=None,
+    models=None,
+    tz: str | None = None,
 ) -> None:
     """Register the Phase 1 jobs on an APScheduler instance.
 
@@ -189,6 +290,23 @@ def schedule(
         coalesce=True,  # a missed window while offline sends once, not per miss
         misfire_grace_time=3600,
     )
+
+    if send_text is not None:
+        scheduler.add_job(
+            water_reminder,
+            kwargs={
+                "session_factory": session_factory,
+                "settings": settings,
+                "clock": clock,
+                "send_text": send_text,
+            },
+            trigger="cron",
+            hour="10,13,16,19,22",
+            timezone=zone,
+            id="water_reminder",
+            coalesce=True,
+            misfire_grace_time=1800,
+        )
 
     if models is not None:
         scheduler.add_job(

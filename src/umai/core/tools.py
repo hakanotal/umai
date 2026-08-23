@@ -867,6 +867,19 @@ class DayTotals:
     unmatched_items: int
 
 
+def water_target(user: User, settings: Settings) -> float:
+    """The effective daily water target in ml.
+
+    User's own setting wins when set and positive; otherwise falls back to the
+    system default. The None / non-None distinction is deliberate: a user who
+    explicitly sets their target to None has not opted out, they just haven't
+    configured it yet.
+    """
+    if user.water_target_ml is not None and user.water_target_ml > 0:
+        return user.water_target_ml
+    return settings.water_target_ml
+
+
 async def day_totals(
     session: AsyncSession, user: User, clock: Clock, day: dt.date | None = None
 ) -> DayTotals:
@@ -1154,6 +1167,7 @@ def format_day(
     target: safety.TargetDecision | None,
     *,
     steps: DaySteps | None = None,
+    water_target_ml: float | None = None,
 ) -> str:
     """The one summary formatter. Deterministic, in code, no model call.
 
@@ -1173,8 +1187,12 @@ def format_day(
             lines.append(f"{left:.0f} kcal left, protein target {target.protein_target_g}g")
         else:
             lines.append(f"{-left:.0f} kcal over, protein target {target.protein_target_g}g")
-    if totals.water_ml:
-        lines.append(f"Water {totals.water_ml:.0f} ml")
+    if totals.water_ml or water_target_ml is not None:
+        if water_target_ml is not None and water_target_ml > 0:
+            pct = min(100, totals.water_ml / water_target_ml * 100)
+            lines.append(f"Water {totals.water_ml:.0f} / {water_target_ml:.0f} ml ({pct:.0f}%)")
+        else:
+            lines.append(f"Water {totals.water_ml:.0f} ml")
     if steps is not None:
         if steps.suspect:
             # Printing a number here would be worse than printing nothing: it
@@ -1222,6 +1240,7 @@ async def get_or_create_user(
         # A seed, not a setting. /cuisines is the source of truth from here on,
         # and an empty list is a perfectly good starting point.
         cuisines=settings.cuisine_list,
+        water_target_ml=settings.water_target_ml,
     )
     session.add(user)
     await session.flush()

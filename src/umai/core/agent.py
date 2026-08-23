@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from umai.analytics import safety
 from umai.clock import Clock, local_date
 from umai.config.models import ModelClient
+from umai.config.settings import Settings
 from umai.core import cuisines as cuisines_mod
 from umai.core import tools
 from umai.db.models import (
@@ -146,19 +147,16 @@ HELP = """I keep track of what you eat, so you don't have to think about it.
 Send a photo of your meal and I'll identify the items, estimate the amounts and log it.
 You can also just type it: "200g rice and chicken" or "a coffee".
 
-The buttons under the message field cover the daily routine:
-💧 250 / 500 ml: log water in one tap
+The buttons under the message field cover everything:
+💧 250 ml: log water in one tap
 📊 Today: today's totals
-✏️ Edit today: fix or remove something you logged
+📊 Week: the last seven days
+✏️ Edit: fix or remove something you logged
+📚 Library: your frequent foods, one-tap re-log
+🍽️ Dinnerware: plate sizes for better portion estimates
 ⚖️ Weigh in: log your morning weight
-
-Commands:
-/summary: where you are today
-/week: the last seven days
-/edit: fix or remove today's entries
-/cuisines: what you usually eat
-/dinnerware: plate sizes for better portion estimates
-/recipe: save a dish you cook often
+📝 Recipe: save a dish you cook often
+🌍 Cuisines: what you usually eat (helps me recognise your food)
 """
 
 
@@ -187,6 +185,7 @@ async def handle_text(
     user: User,
     clock: Clock,
     text: str,
+    settings: Settings,
 ) -> Reply:
     """One text message in, one reply out. Uses at most one model call."""
 
@@ -231,7 +230,7 @@ async def handle_text(
             return Reply("What did the scale say? Just send the number.")
         return Reply(await _log_weight(session, user, clock, c.kg))
     if c.intent == "status":
-        return Reply(await summary_line(session, user, clock))
+        return Reply(await summary_line(session, user, clock, settings))
     return Reply(
         "I didn't catch that as something to log. Send a photo of the meal, "
         "or type it like '200g rice and grilled chicken'."
@@ -315,7 +314,7 @@ async def _log_food(
     return Reply(reply, meal.entry.id, needs_enrichment=meal.has_unmatched)
 
 
-async def summary_line(session: AsyncSession, user: User, clock: Clock) -> str:
+async def summary_line(session: AsyncSession, user: User, clock: Clock, settings: Settings) -> str:
     totals = await tools.day_totals(session, user, clock)
     target = None
     weight = await tools.latest_weight(session, user.id)
@@ -325,7 +324,8 @@ async def summary_line(session: AsyncSession, user: User, clock: Clock) -> str:
         except RuntimeError:
             target = None
     steps = await tools.daily_steps(session, user, clock)
-    return tools.format_day(user, totals, target, steps=steps)
+    wt = tools.water_target(user, settings)
+    return tools.format_day(user, totals, target, steps=steps, water_target_ml=wt)
 
 
 async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:

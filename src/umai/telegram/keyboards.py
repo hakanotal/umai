@@ -35,16 +35,21 @@ from umai.core.tools import LibraryItem, TodayEntry
 WATER = "💧"
 SCALE = "⚖️"
 CHART = "📊"
+CALENDAR = "📅"
 PENCIL = "✏️"
 BASKET = "🗑"
 CHECK = "✅"
 HOURGLASS = "⏳"
+BOOK = "📚"
+GEAR = "⚙️"
 
 WATER_250 = f"{WATER} 250 ml"
-WATER_500 = f"{WATER} 500 ml"
 BTN_TODAY = f"{CHART} Today"
-BTN_EDIT = f"{PENCIL} Edit today"
+BTN_WEEK = f"{CALENDAR} Week"
+BTN_EDIT = f"{PENCIL} Edit"
 BTN_WEIGH = f"{SCALE} Weigh in"
+BTN_LIBRARY = f"{BOOK} Library"
+BTN_CONFIGURE = f"{GEAR} Configure"
 
 ENTRY_PREFIX_LEN = 8
 
@@ -52,21 +57,42 @@ ENTRY_PREFIX_LEN = 8
 def main_menu() -> ReplyKeyboardMarkup:
     """The persistent menu. Sent on /start and /help, and it stays.
 
-    Water gets two buttons because it is the most repeated action of the day
-    and the two sizes cover nearly every glass and bottle. Everything else is
-    one tap into a flow.
+    Row 1: data inputs (log water, weigh in, re-log from library).
+    Row 2: viewing (today's totals, edit entries, week summary).
+    Row 3: configure (opens an inline keyboard with recipe/dinnerware/cuisines).
     """
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=WATER_250), KeyboardButton(text=WATER_500)],
+            [
+                KeyboardButton(text=WATER_250),
+                KeyboardButton(text=BTN_WEIGH),
+                KeyboardButton(text=BTN_LIBRARY),
+            ],
             [
                 KeyboardButton(text=BTN_TODAY),
                 KeyboardButton(text=BTN_EDIT),
-                KeyboardButton(text=BTN_WEIGH),
+                KeyboardButton(text=BTN_WEEK),
             ],
+            [KeyboardButton(text=BTN_CONFIGURE)],
         ],
         input_field_placeholder="…or just type what you ate",
         resize_keyboard=True,
+    )
+
+
+def configure_menu() -> InlineKeyboardMarkup:
+    """The inline keyboard shown when the Configure button is tapped."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📝 Recipe", callback_data="cfg:recipe"),
+                InlineKeyboardButton(text="🍽️ Dinnerware", callback_data="cfg:dinnerware"),
+                InlineKeyboardButton(text="🌍 Cuisines", callback_data="cfg:cuisines"),
+            ],
+            [
+                InlineKeyboardButton(text="💧 Water target", callback_data="cfg:water"),
+            ],
+        ]
     )
 
 

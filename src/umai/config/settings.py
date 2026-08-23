@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     # identification, and only one of them resolves against a food table.
     # Editable in chat afterwards with /cuisines, which is the source of truth.
     cuisines: str = Field(default="turkish", alias="UMAI_CUISINES")
+    # Daily water intake target in ml. Seeds new users; editable in chat.
+    water_target_ml: float = Field(default=2500.0, alias="UMAI_WATER_TARGET_ML")
 
     @field_validator("tz")
     @classmethod

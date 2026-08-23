@@ -112,6 +112,21 @@ async def number_received(
             await message.answer(f"Water updated: {value:.0f} ml 💧")
             return
 
+        if data.get("mode") == "water_target":
+            if value <= 0:
+                user.water_target_ml = None
+                await session.commit()
+                await state.clear()
+                await message.answer(
+                    f"Water target reset to default ({settings.water_target_ml:.0f} ml) 💧"
+                )
+                return
+            user.water_target_ml = value
+            await session.commit()
+            await state.clear()
+            await message.answer(f"Water target set to {value:.0f} ml per day 💧")
+            return
+
         entry_id = await entry_by_prefix(session, user.id, data["entry_prefix"])
         if entry_id is None:
             await state.clear()
