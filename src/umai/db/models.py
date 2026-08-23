@@ -41,6 +41,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -128,6 +129,25 @@ class ResolutionMethod(enum.StrEnum):
     new = "new"
 
 
+class UserStatus(enum.StrEnum):
+    """Where a person is between "typed /start" and "logging meals".
+
+    Four states rather than a boolean, because three of them need different
+    handlers. `pending` has sent something but not the invite phrase and must
+    reach nothing but the gate. `onboarding` has been admitted but has no
+    timezone or body statistics yet, so every target and every local-day
+    boundary would be a guess. `active` is the only state the food handlers
+    accept. `blocked` is how access is revoked without destroying the history,
+    which matters because the entries are immutable and deleting the user row
+    would cascade them away.
+    """
+
+    pending = "pending"
+    onboarding = "onboarding"
+    active = "active"
+    blocked = "blocked"
+
+
 def _pg_enum(e: type[enum.Enum], name: str) -> Enum:
     return Enum(e, name=name, values_callable=lambda x: [m.value for m in x])
 
@@ -139,14 +159,54 @@ def _pg_enum(e: type[enum.Enum], name: str) -> Enum:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # An active user always has a zone. Nothing else in the schema can
+        # express "these columns are required, but only once onboarding is
+        # finished", and without it a half-onboarded row could reach
+        # `day_bounds` and produce totals for a day that does not exist.
+        CheckConstraint(
+            "status <> 'active' OR tz IS NOT NULL",
+            name="ck_users_active_has_tz",
+        ),
+        CheckConstraint(
+            "summary_hour between 0 and 23 and summary_minute between 0 and 59",
+            name="ck_users_summary_time",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
-    # No default. This column is the source of truth for every local-day
-    # boundary — food totals, summaries, step bucketing — so a row that reaches
-    # the database without one should fail loudly rather than silently adopt a
-    # city its owner has never been to. get_or_create_user supplies it.
-    tz: Mapped[str] = mapped_column(String(64))
+    # Access state. Every message is offered to the gate routers first and
+    # reaches a feature handler only when this says `active`; see
+    # telegram/middleware.py.
+    status: Mapped[UserStatus] = mapped_column(
+        _pg_enum(UserStatus, "user_status"),
+        nullable=False,
+        server_default=UserStatus.pending.value,
+        index=True,
+    )
+    # One privilege — seeing and blocking other people — so a boolean rather
+    # than a role table nobody would populate.
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Wrong invite phrases, since the row was created. At the limit the row
+    # flips to `blocked`: without a counter a hidden phrase is an oracle that
+    # answers several guesses a second.
+    code_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Bearer credential for this person's health-ingest endpoint. Plaintext, so
+    # /token can show it again rather than forcing a rotation and a re-paste
+    # into a phone app; the endpoint reads it, nothing else does.
+    health_token: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # When the evening summary is due, in this user's own zone. Two integers
+    # rather than a module constant because the scheduler now ticks over every
+    # active user and each of them keeps their own hours.
+    summary_hour: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
+    summary_minute: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+    # Nullable, unlike everything else here that reads as required. This column
+    # is the source of truth for every local-day boundary — food totals,
+    # summaries, step bucketing — and there is no honest default for it, so a
+    # pending row carries None and the CHECK above stops that state reaching
+    # `active`. Read it through `zone` rather than directly.
+    tz: Mapped[str | None] = mapped_column(String(64))
     sex: Mapped[str | None] = mapped_column(String(16))
     height_cm: Mapped[float | None] = mapped_column(Float)
     birth_date: Mapped[dt.date | None] = mapped_column(Date)
@@ -162,6 +222,29 @@ class User(Base):
     # water reminders read it to decide whether to nudge.
     water_target_ml: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[dt.datetime] = mapped_column(TS, server_default=func.now())
+    # When the invite phrase was accepted. Null for the bootstrap admin, who
+    # never needed one.
+    admitted_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        TS, server_default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def zone(self) -> str:
+        """This user's timezone, or a loud failure.
+
+        Every caller that computes a local day wants a `str`, and `tz` is
+        `str | None` because a pending row genuinely has no zone. Funnelling
+        the reads through here keeps those call sites honest without either
+        spreading `assert` through them or — far worse — letting a `None` reach
+        `ZoneInfo` as the string "None".
+        """
+        if self.tz is None:
+            raise RuntimeError(
+                f"user {self.telegram_id} has no timezone: onboarding is incomplete "
+                f"(status={self.status})"
+            )
+        return self.tz
 
 
 # ---------------------------------------------------------------------------
@@ -315,9 +398,23 @@ class Correction(Base):
 
 
 class Media(Base):
+    """A photo on disk, and the entry it produced.
+
+    `user_id` is carried directly rather than reached through `entry_id`,
+    because the row is written *before* the entry exists — the perception run
+    needs something to hang off — and an orphaned row with a null entry would
+    otherwise have no owner at all.
+
+    The digest is unique per user, not globally. Globally unique, the second
+    person to photograph the same tin of beans hit `ON CONFLICT DO NOTHING`,
+    got back the first person's row, and had their meal attached to a
+    stranger's entry."""
+
     __tablename__ = "media"
+    __table_args__ = (UniqueConstraint("user_id", "sha256", name="uq_media_user_sha256"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     entry_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("log_entries.id", ondelete="CASCADE")
     )
@@ -564,11 +661,21 @@ class Commitment(Base):
 
 
 class ApiUsage(Base):
-    """Exists so the bot can report its own cost honestly."""
+    """Exists so the bot can report its own cost honestly.
+
+    `user_id` is nullable and, for now, unwritten: the usage callback fires
+    from whichever worker thread made the model call and has no user in scope,
+    so filling it needs a context variable threaded from the access middleware.
+    The column lands first because this table is append-only — rows written
+    before that wiring simply stay null, meaning "before multi-user", and no
+    backfill is ever needed."""
 
     __tablename__ = "api_usage"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     called_at: Mapped[dt.datetime] = mapped_column(TS, server_default=func.now(), index=True)
     provider: Mapped[str] = mapped_column(String(32), default="openrouter")
     model: Mapped[str] = mapped_column(String(120))
@@ -628,14 +735,35 @@ class JobRun(Base):
 
     A restart mid-job or a missed window re-runs it, and sending the evening
     summary twice is exactly the kind of thing that makes a bot feel broken.
-    The (job, day) claim means it is sent once per calendar day, ever."""
+    The claim means it is sent once per calendar day, ever.
+
+    Per *user*, since the scheduler ticks over everybody: with the claim keyed
+    on (job, day) alone the first person summarised would take the day and
+    nobody else would hear anything. `user_id` is nullable so a genuinely
+    global job — a backup, a price refresh — can still claim a day for the
+    whole deployment.
+
+    Hence two constraints rather than one. A nullable column inside a UNIQUE is
+    not restrictive in Postgres, because NULL is never equal to NULL, so two
+    global claims for the same day would both insert. The partial index is what
+    actually enforces the global case."""
 
     __tablename__ = "job_runs"
-    __table_args__ = (UniqueConstraint("job", "day", name="uq_job_run_day"),)
+    __table_args__ = (
+        UniqueConstraint("job", "day", "user_id", name="uq_job_run_day_user"),
+        Index(
+            "uq_job_run_day_global",
+            "job",
+            "day",
+            unique=True,
+            postgresql_where=text("user_id IS NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     job: Mapped[str] = mapped_column(String(100))
     day: Mapped[dt.date] = mapped_column(Date)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     ran_at: Mapped[dt.datetime] = mapped_column(TS, server_default=func.now())
 
 

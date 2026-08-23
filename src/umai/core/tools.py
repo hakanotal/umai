@@ -657,7 +657,7 @@ async def today_entries(session: AsyncSession, user: User, clock: Clock) -> list
     everything that can be fixed: a mis-tapped water button is exactly as
     wrong as a mis-estimated meal.
     """
-    start, end = day_bounds(today(clock, user.tz), user.tz)
+    start, end = day_bounds(today(clock, user.zone), user.zone)
     rows = (
         (
             await session.execute(
@@ -678,7 +678,7 @@ async def today_entries(session: AsyncSession, user: User, clock: Clock) -> list
 
     out: list[TodayEntry] = []
     for e in rows:
-        local = e.occurred_at.astimezone(ZoneInfo(user.tz)).strftime("%H:%M")
+        local = e.occurred_at.astimezone(ZoneInfo(user.zone)).strftime("%H:%M")
         if e.kind is EntryKind.water:
             out.append(
                 TodayEntry(
@@ -889,7 +889,7 @@ async def day_totals(
     is one query in one place rather than three slightly different sums in
     three handlers.
     """
-    start, end = day_bounds(day or today(clock, user.tz), user.tz)
+    start, end = day_bounds(day or today(clock, user.zone), user.zone)
     window = (LogEntry.occurred_at >= start, LogEntry.occurred_at < end)
 
     macros = (
@@ -984,10 +984,10 @@ async def steps_by_day(
 
     # Bound the scan on the indexed column so ix_health_user_metric_time is
     # usable; the grouping expression alone would force a sequential scan.
-    window_start, _ = day_bounds(start, user.tz)
-    _, window_end = day_bounds(end, user.tz)
+    window_start, _ = day_bounds(start, user.zone)
+    _, window_end = day_bounds(end, user.zone)
 
-    local_day = func.date(func.timezone(user.tz, HealthMetric.recorded_at))
+    local_day = func.date(func.timezone(user.zone, HealthMetric.recorded_at))
     stmt = (
         select(
             local_day.label("day"),
@@ -1030,7 +1030,7 @@ async def daily_steps(
     Delegates to `steps_by_day` so there is one query and one bucketing rule
     rather than two that drift apart.
     """
-    target = day or today(clock, user.tz)
+    target = day or today(clock, user.zone)
     return (await steps_by_day(session, user, target, target)).get(target)
 
 
@@ -1088,7 +1088,7 @@ def current_target(user: User, weight_kg: float, clock: Clock) -> safety.TargetD
             "person fields (sex, height, birth date) are unset; they seed BMR "
             "and the safety floors. See UMAI_SEX / UMAI_HEIGHT_CM / UMAI_BIRTH_DATE."
         )
-    age = safety.age_years(user.birth_date, today(clock, user.tz))
+    age = safety.age_years(user.birth_date, today(clock, user.zone))
     sex: Literal["male", "female"] = "male" if user.sex == "male" else "female"
     return safety.decide_target(
         sex=sex,
@@ -1140,7 +1140,7 @@ def format_entry(user: User, entry: LogEntry) -> str:
     The meal exactly as it was first shown (so the ✏️ item numbers line up
     with what the user remembers), or the water amount.
     """
-    local = entry.occurred_at.astimezone(ZoneInfo(user.tz)).strftime("%H:%M")
+    local = entry.occurred_at.astimezone(ZoneInfo(user.zone)).strftime("%H:%M")
     if entry.kind is EntryKind.water:
         return f"💧 {float(entry.value or 0.0):.0f} ml at {local}"
     items = sorted(entry.items, key=lambda i: (i.position is None, i.position))

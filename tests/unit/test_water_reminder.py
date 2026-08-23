@@ -71,7 +71,10 @@ def _session_factory(session=None):
     return factory
 
 
-_USER = SimpleNamespace(tz="Europe/Istanbul")
+# Mirrors the real row: production reads the zone through User.zone, which
+# exists because users.tz is nullable until onboarding finishes. A stub that
+# only carried .tz would pass while the code under test could not run.
+_USER = SimpleNamespace(tz="Europe/Istanbul", zone="Europe/Istanbul")
 
 # Common patch decorators extracted for readability.
 _totals_zero = patch(

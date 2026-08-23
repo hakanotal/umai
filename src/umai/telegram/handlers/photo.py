@@ -82,7 +82,7 @@ async def photo(
             user = await tools.get_or_create_user(
                 session, settings, sender_id(message), clock=clock
             )
-            user_id, tz, cuisines = user.id, user.tz, list(user.cuisines or [])
+            user_id, tz, cuisines = user.id, user.zone, list(user.cuisines or [])
             ctx = prompt_mod.PromptContext(
                 dinnerware=await tools.list_dinnerware(session, user_id),
                 portion_priors=await tools.portion_priors(session, user_id),

@@ -92,12 +92,36 @@ async def test_a_turkish_dish_name_returns_nothing_rather_than_noise(session, tu
 
 
 async def test_the_threshold_is_what_suppresses_a_weak_match(session):
+    """The emptiness above is the floor at work, not an unrelated miss.
+
+    The weak match is seeded here rather than assumed. "Lamb, cured, ham"
+    scores about 0.09 against "lahmacun" — far under the default floor, well
+    over a hand-set 0.01 — so the pair of assertions brackets the threshold
+    using only rows this test inserted. Relying on the real FNDDS table to
+    supply a weak match, as this test used to, made it pass on a seeded dev
+    database and fail on an empty one.
+    """
     await seed_rows(session)
-    # Same query, only the floor differs: proof the emptiness above is the
-    # threshold at work and not an unrelated miss.
+    session.add(
+        FnddsFood(
+            fdc_id=9_900_003,
+            food_code="99000030",
+            description="Lamb, cured, ham",
+            wweia_category="Test foods",
+            kcal_per_100g=200.0,
+            protein_g_per_100g=20.0,
+            carbs_g_per_100g=0.0,
+            fat_g_per_100g=14.0,
+            fiber_g_per_100g=0.0,
+            sugar_g_per_100g=None,
+            sodium_mg_per_100g=None,
+        )
+    )
+    await session.flush()
+
     assert await fndds.search(session, "lahmacun") == []
     loose = await fndds.search(session, "lahmacun", min_score=0.01)
-    assert loose, "with the floor removed, trigram always finds *something*"
+    assert loose, "with the floor removed, the weak match seeded above is found"
 
 
 async def test_an_empty_query_is_not_sent_to_the_database(session):

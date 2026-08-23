@@ -15,6 +15,7 @@ SQLite, and those are precisely the behaviours worth testing.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import os
 import uuid
@@ -27,7 +28,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from umai.db.models import Base, User
+from umai.db.models import Base, User, UserStatus
 
 CASSETTES = Path(__file__).parent / "cassettes"
 
@@ -254,14 +255,88 @@ async def session(engine) -> AsyncIterator[AsyncSession]:
         await conn.close()
 
 
+def make_user(**overrides) -> User:
+    """A fully onboarded user, unless told otherwise.
+
+    Every field the wizard fills is set, because `active` is the state almost
+    every test wants and a half-filled row is a different test's subject. The
+    telegram_id is random so two users in one test never collide on the unique
+    index.
+    """
+    fields = {
+        "id": uuid.uuid4(),
+        "telegram_id": int(uuid.uuid4().int % 1_000_000_000),
+        "status": UserStatus.active,
+        "tz": "Europe/Istanbul",
+        "sex": "male",
+        "height_cm": 180.0,
+        "birth_date": dt.date(1990, 5, 1),
+        "goal_type": "lose",
+        "goal_rate_kg_per_week": -0.5,
+        "cuisines": ["turkish"],
+    }
+    return User(**{**fields, **overrides})
+
+
+@pytest.fixture
+def build_user():
+    """`make_user` as a fixture, because `tests/` is not a package and a test
+    module cannot import from conftest directly."""
+    return make_user
+
+
 @pytest_asyncio.fixture
 async def user(session: AsyncSession) -> User:
-    u = User(
-        id=uuid.uuid4(),
-        telegram_id=int(uuid.uuid4().int % 1_000_000_000),
-        tz="Europe/Istanbul",
-        sex="male",
-        height_cm=180.0,
+    u = make_user()
+    session.add(u)
+    await session.flush()
+    return u
+
+
+@pytest_asyncio.fixture
+async def other_user(session: AsyncSession) -> User:
+    """A second, unrelated active user.
+
+    Exists so a test can ask the question that matters most now the bot is
+    multi-user: does this operation touch anybody else's rows.
+    """
+    u = make_user(tz="Europe/London")
+    session.add(u)
+    await session.flush()
+    return u
+
+
+@pytest_asyncio.fixture
+async def pending_user(session: AsyncSession) -> User:
+    """Sent /start, has not given the invite phrase. No zone, by design."""
+    u = make_user(
+        status=UserStatus.pending,
+        tz=None,
+        sex=None,
+        height_cm=None,
+        birth_date=None,
+        goal_type=None,
+        goal_rate_kg_per_week=None,
+        cuisines=[],
+    )
+    session.add(u)
+    await session.flush()
+    return u
+
+
+@pytest_asyncio.fixture
+async def onboarding_user(session: AsyncSession) -> User:
+    """Admitted, wizard not finished. The state the migration puts an existing
+    user in when their env-seeded profile was incomplete."""
+    u = make_user(
+        status=UserStatus.onboarding,
+        tz=None,
+        sex=None,
+        height_cm=None,
+        birth_date=None,
+        goal_type=None,
+        goal_rate_kg_per_week=None,
+        cuisines=[],
     )
     session.add(u)
     await session.flush()

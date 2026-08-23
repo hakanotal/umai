@@ -341,7 +341,7 @@ async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:
     nothing was logged is a real fact about the week, and hiding it would make
     a gap in logging look like a gap in living.
     """
-    today_local = local_date(clock.now(), user.tz)
+    today_local = local_date(clock.now(), user.zone)
     first = today_local - dt.timedelta(days=6)
 
     # One query for the whole range rather than seven, since the step read is

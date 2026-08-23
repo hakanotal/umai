@@ -84,11 +84,34 @@ reset-db: db-down
 
 # --- quality ---------------------------------------------------------------
 
-# Integration tests point at the dev container when it's up (testcontainers
-# otherwise, skip if no Docker). `just check` runs the full suite.
-test: db
-    UMAI_TEST_DATABASE_URL=postgresql+asyncpg://umai:dev@localhost:5433/umai \
+# Integration tests get their own database on the dev container, created on
+# demand (testcontainers otherwise, skip if no Docker). `just check` runs the
+# full suite.
+#
+# Deliberately not the `umai` dev database. The tests build their schema with
+# `create_all`, which will not alter a table that already exists — so as soon
+# as a migration adds a column, a shared database is stale for the tests and
+# the failure reads as a broken test rather than a stale schema. It also means
+# a test run can no longer disturb whatever the dev bot is doing.
+test: test-db
+    UMAI_TEST_DATABASE_URL=postgresql+asyncpg://umai:dev@localhost:5433/umai_test \
         uv run pytest
+
+test-db: db
+    @docker exec umai-db-1 psql -U umai -d postgres -tAc \
+        "SELECT 1 FROM pg_database WHERE datname='umai_test'" | grep -q 1 \
+        || docker exec umai-db-1 psql -U umai -d postgres -q \
+            -c "CREATE DATABASE umai_test OWNER umai"
+    @docker exec umai-db-1 psql -U umai -d umai_test -q \
+        -c "CREATE EXTENSION IF NOT EXISTS pg_trgm" \
+        -c "CREATE EXTENSION IF NOT EXISTS vector"
+
+# Throw the test database away. The next `just test` rebuilds it, which is the
+# fix whenever a schema change leaves it stale.
+test-db-reset:
+    @docker exec umai-db-1 psql -U umai -d postgres -q \
+        -c "DROP DATABASE IF EXISTS umai_test"
+    @echo "dropped; the next 'just test' recreates it"
 
 # One test: just t tests/unit/test_compute.py::test_yield_factor
 t target:

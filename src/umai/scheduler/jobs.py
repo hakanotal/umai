@@ -76,7 +76,7 @@ async def evening_summary(session_factory, settings, clock: Clock, send) -> None
         user = (await session.execute(select(User).limit(1))).scalar_one_or_none()
         if user is None:
             return
-        day = today(clock, user.tz)
+        day = today(clock, user.zone)
         if not await claim(session, "evening_summary", day):
             return
 
@@ -105,7 +105,7 @@ async def _last_days(
 ) -> tuple[list[dt.date], list[float], list[float]]:
     """Per-day totals for the last n local days, zeros included (for the chart
     a flat zero is honest: nothing was logged)."""
-    end = local_date(clock.now(), user.tz)
+    end = local_date(clock.now(), user.zone)
     days: list[dt.date] = []
     kcal: list[float] = []
     protein: list[float] = []
@@ -141,9 +141,9 @@ async def scheduling_tz(session_factory, settings) -> str:
 
     The user's own, read from the database, because that is the same column
     every other part of the job already uses: `evening_summary` computes "today"
-    with `today(clock, user.tz)` and `_last_days` walks back through
-    `local_date(..., user.tz)`. Firing the job on `settings.tz` while its
-    contents were computed in `user.tz` meant the two could disagree — and they
+    with `today(clock, user.zone)` and `_last_days` walks back through
+    `local_date(..., user.zone)`. Firing the job on `settings.tz` while its
+    contents were computed in `user.zone` meant the two could disagree — and they
     did, by seven hours, with the environment saying one city and the user row
     another.
 
@@ -192,7 +192,7 @@ async def water_reminder(session_factory, settings, clock: Clock, send_text) -> 
         user = (await session.execute(select(User).limit(1))).scalar_one_or_none()
         if user is None:
             return
-        day = today(clock, user.tz)
+        day = today(clock, user.zone)
 
         # How many reminders have already been sent today?
         count = await _water_reminder_count(session, day)

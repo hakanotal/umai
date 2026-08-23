@@ -162,6 +162,7 @@ async def test_hard_delete_keeps_the_photo_archive(session, user):
     meal = await log_rice(session, user)
     media = Media(
         id=uuid.uuid4(),
+        user_id=user.id,
         path="/tmp/edit-test.jpg",
         sha256=uuid.uuid4().hex,
         taken_at=None,

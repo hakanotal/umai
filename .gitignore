@@ -27,3 +27,8 @@ __pycache__/
 
 # macos
 .DS_Store
+
+# Symlinks into the primary checkout when this is a git worktree.
+/data
+/docs/papers
+/eval/photos
