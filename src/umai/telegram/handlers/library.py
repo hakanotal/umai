@@ -31,7 +31,7 @@ router = Router(name="library")
 # for one-tap re-logging with the typical portion.
 
 
-@router.message(Command("library"))
+@router.message(Command("library") | F.text == keyboards.BTN_LIBRARY)
 async def library_command(message: Message, settings: Settings, clock: Clock) -> None:
     """Show the user's most frequent foods for one-tap re-logging."""
     async with session_scope() as session:
