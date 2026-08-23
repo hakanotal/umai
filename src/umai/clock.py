@@ -4,7 +4,7 @@ Nothing anywhere in Umai calls the wall clock directly; everything takes a
 Clock. This is what makes the time-dependent features (trend weight, the
 calibration window, evening check-ins) testable in seconds instead of weeks.
 
-See technical-implementation.md section 8. The ban is enforced by ruff and by
+See docs/technical-implementation.md section 8. The ban is enforced by ruff and by
 `just check-clock`.
 """
 

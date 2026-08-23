@@ -1,9 +1,9 @@
 """SQLAlchemy table definitions.
 
-Implements the data model in umai-project-plan.md section 6.3.
+Implements the data model in docs/umai-project-plan.md section 6.3.
 
 Two deliberate departures from that section, both from
-technical-implementation.md section 9:
+docs/technical-implementation.md section 9:
 
   * No vector columns yet. Phase 1 resolves names with pg_trgm against
     canonical_name_en and the aliases array, which needs no embedding model on
@@ -142,7 +142,11 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
-    tz: Mapped[str] = mapped_column(String(64), default="Europe/Istanbul")
+    # No default. This column is the source of truth for every local-day
+    # boundary — food totals, summaries, step bucketing — so a row that reaches
+    # the database without one should fail loudly rather than silently adopt a
+    # city its owner has never been to. get_or_create_user supplies it.
+    tz: Mapped[str] = mapped_column(String(64))
     sex: Mapped[str | None] = mapped_column(String(16))
     height_cm: Mapped[float | None] = mapped_column(Float)
     birth_date: Mapped[dt.date | None] = mapped_column(Date)
@@ -599,9 +603,7 @@ class EnrichmentAttempt(Base):
     """
 
     __tablename__ = "enrichment_attempts"
-    __table_args__ = (
-        UniqueConstraint("detected_name", "state", name="uq_enrichment_name_state"),
-    )
+    __table_args__ = (UniqueConstraint("detected_name", "state", name="uq_enrichment_name_state"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     detected_name: Mapped[str] = mapped_column(String(200))

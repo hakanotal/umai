@@ -20,11 +20,13 @@ services:
     image: ${UMAI_IMAGE:-ghcr.io/OWNER/umai:latest}
     restart: unless-stopped
     env_file: [.env]
-    # Load-bearing, not cosmetic. The scheduler's cron trigger reads it (via
-    # Settings.tz) to decide when "21:30 local" is; unset, the container is UTC
-    # and the evening summary arrives at half past midnight.
-    environment:
-      TZ: ${TZ:-Europe/Istanbul}
+      # Inside the container, not on the host. Docker forwards the published
+      # port over the bridge interface, so a process bound to the container's
+      # own loopback is unreachable and every phone POST is refused — while the
+      # healthcheck below, which curls from inside, passes regardless. The host
+      # side of the mapping stays 127.0.0.1, which is where the security
+      # property actually lives.
+      UMAI_HTTP_HOST: 0.0.0.0
     depends_on:
       db: {condition: service_healthy}
     healthcheck:

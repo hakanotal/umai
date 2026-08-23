@@ -512,9 +512,7 @@ async def remove_dinnerware(
 
     existing = (
         await session.execute(
-            select(Dinnerware.id).where(
-                Dinnerware.user_id == user_id, Dinnerware.name == name
-            )
+            select(Dinnerware.id).where(Dinnerware.user_id == user_id, Dinnerware.name == name)
         )
     ).first()
     if existing is None:
@@ -954,7 +952,6 @@ MAX_PLAUSIBLE_DAILY_STEPS = 100_000
 async def steps_by_day(
     session: AsyncSession,
     user: User,
-    clock: Clock,
     start: dt.date,
     end: dt.date,
 ) -> dict[dt.date, DaySteps]:
@@ -1021,7 +1018,7 @@ async def daily_steps(
     rather than two that drift apart.
     """
     target = day or today(clock, user.tz)
-    return (await steps_by_day(session, user, clock, target, target)).get(target)
+    return (await steps_by_day(session, user, target, target)).get(target)
 
 
 async def latest_weight(session: AsyncSession, user_id: uuid.UUID) -> float | None:
@@ -1183,8 +1180,7 @@ def format_day(
             # Printing a number here would be worse than printing nothing: it
             # would look like data. See DaySteps on how this happens.
             lines.append(
-                f"Steps look wrong today ({steps.samples} readings) — "
-                "check the export settings."
+                f"Steps look wrong today ({steps.samples} readings). Check the export settings."
             )
         else:
             lines.append(f"Steps {steps.steps:,}")

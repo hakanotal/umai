@@ -1,4 +1,4 @@
-"""The brand palette, sampled from umai-logo.jpg.
+"""The brand palette, sampled from docs/umai-logo.jpg.
 
 A Telegram chat cannot be themed; the colours the product actually shows
 are the chart PNGs, and later the Mini App. Both draw from here, so the

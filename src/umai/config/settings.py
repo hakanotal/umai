@@ -51,7 +51,12 @@ class Settings(BaseSettings):
     # No defaults on purpose. BMR, the safety floors and the initial expenditure
     # estimate are all seeded from these, and a plausible-looking wrong default
     # is worse than a startup failure.
-    tz: str = Field(default="Europe/Istanbul", alias="TZ")
+    # No default, deliberately. A hardcoded city here is exactly the
+    # "plausible-looking wrong default" the person fields below refuse to have:
+    # it silently seeds every user row and every local-day boundary, and it
+    # looks right until someone notices their day starts at the wrong hour.
+    # check_startup() refuses to boot without it.
+    tz: str = Field(default="", alias="TZ")
     sex: Literal["male", "female", ""] = Field(default="", alias="UMAI_SEX")
     height_cm: float | None = Field(default=None, alias="UMAI_HEIGHT_CM")
     birth_date: date | None = Field(default=None, alias="UMAI_BIRTH_DATE")
@@ -66,6 +71,28 @@ class Settings(BaseSettings):
     # identification, and only one of them resolves against a food table.
     # Editable in chat afterwards with /cuisines, which is the source of truth.
     cuisines: str = Field(default="turkish", alias="UMAI_CUISINES")
+
+    @field_validator("tz")
+    @classmethod
+    def _known_zone(cls, v: str) -> str:
+        """Reject a zone the tz database has never heard of, at load time.
+
+        Otherwise a typo surfaces as ZoneInfoNotFoundError from somewhere deep
+        in a handler, hours later, on whichever request first needed a local
+        date.
+        """
+        if not v:
+            return v
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(
+                f"TZ={v!r} is not an IANA time zone name. Use e.g. "
+                "'Europe/Istanbul' or 'America/New_York', not an abbreviation."
+            ) from exc
+        return v
 
     @field_validator("telegram_allowed_user_ids")
     @classmethod
@@ -108,7 +135,8 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "Cannot compute a calorie target without: "
                 + ", ".join(missing)
-                + ". These seed BMR and the safety floors; see umai-project-plan.md section 11."
+                + ". These seed BMR and the safety floors;"
+                + " see docs/umai-project-plan.md section 11."
             )
 
     def check_startup(self) -> list[str]:
@@ -122,6 +150,12 @@ class Settings(BaseSettings):
             )
         if not self.openrouter_api_key:
             problems.append("OPENROUTER_API_KEY is unset: photo logging will fail")
+        if not self.tz:
+            problems.append(
+                "TZ is unset: it decides where every local day starts, seeds new "
+                "user rows, and sets the hour the evening summary fires. Guessing "
+                "it wrong is invisible until a day lands on the wrong date."
+            )
         if self.env == "prod":
             if not self.telegram_webhook_url:
                 problems.append("prod needs TELEGRAM_WEBHOOK_URL")

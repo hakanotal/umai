@@ -101,9 +101,18 @@ async def amain() -> None:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     from umai.scheduler.jobs import schedule as schedule_jobs
+    from umai.scheduler.jobs import scheduling_tz
 
     scheduler = AsyncIOScheduler()
-    schedule_jobs(scheduler, get_factory(), settings, SystemClock(), _send_summary, models)
+    schedule_jobs(
+        scheduler,
+        get_factory(),
+        settings,
+        SystemClock(),
+        _send_summary,
+        models,
+        tz=await scheduling_tz(get_factory(), settings),
+    )
     scheduler.start()
 
     # --- http: health ingest (+ the webhook route in prod) ------------------

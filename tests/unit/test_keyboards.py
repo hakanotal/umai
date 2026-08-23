@@ -59,12 +59,12 @@ def test_main_menu_labels_are_the_ones_the_menu_handler_matches():
     that exact text before anything reaches the intent classifier. A label
     edited here without the handler following makes the button fall through
     to the model as free text."""
-    from umai.telegram.handlers import _MENU_LABELS
+    from umai.telegram.handlers import MENU_LABELS
 
     labels = {
         *(b.text for row in keyboards.main_menu().keyboard for b in row),
     }
-    assert labels == _MENU_LABELS
+    assert labels == MENU_LABELS
 
 
 def test_edit_list_labels_meals_and_water_differently():

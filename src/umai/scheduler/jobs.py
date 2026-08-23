@@ -130,17 +130,49 @@ async def enrichment_sweep(session_factory, models, clock: Clock) -> None:
         log.info("enrichment sweep: %s", enrichment.summarise(report))
 
 
-def schedule(scheduler, session_factory, settings, clock: Clock, send, models=None) -> None:
+async def scheduling_tz(session_factory, settings) -> str:
+    """The zone the evening summary should fire in.
+
+    The user's own, read from the database, because that is the same column
+    every other part of the job already uses: `evening_summary` computes "today"
+    with `today(clock, user.tz)` and `_last_days` walks back through
+    `local_date(..., user.tz)`. Firing the job on `settings.tz` while its
+    contents were computed in `user.tz` meant the two could disagree — and they
+    did, by seven hours, with the environment saying one city and the user row
+    another.
+
+    Falls back to the configured zone only when no user exists yet, which is the
+    first boot before anyone has sent a message.
+    """
+    async with session_factory() as session:
+        tz = (await session.execute(select(User.tz).limit(1))).scalar_one_or_none()
+    if tz and tz != settings.tz:
+        log.warning(
+            "scheduling in the user's zone %s, which differs from TZ=%s; "
+            "the user row wins because every daily total is computed from it",
+            tz,
+            settings.tz,
+        )
+    return tz or settings.tz
+
+
+def schedule(
+    scheduler, session_factory, settings, clock: Clock, send, models=None, tz: str | None = None
+) -> None:
     """Register the Phase 1 jobs on an APScheduler instance.
 
-    The cron trigger carries the user's timezone explicitly. Without it
-    APScheduler uses the *process* timezone, which in the container is UTC
-    because nothing sets TZ, and "the 21:30 summary" fired at half past midnight
-    local. The docstring here used to claim the shift happened; it did not.
+    `tz` is the zone the cron fires in and should come from `scheduling_tz`, so
+    that the hour the summary arrives and the day it summarises are the same
+    frame. Passing nothing falls back to the configured zone, which is only
+    right before a user exists.
+
+    Without an explicit zone APScheduler uses the *process* timezone, which in
+    a container is UTC unless something sets TZ, and "the 21:30 summary" fires
+    at half past midnight local.
 
     The health endpoint and webhook do not schedule.
     """
-    tz = ZoneInfo(settings.tz)
+    zone = ZoneInfo(tz or settings.tz)
     scheduler.add_job(
         evening_summary,
         kwargs={
@@ -152,7 +184,7 @@ def schedule(scheduler, session_factory, settings, clock: Clock, send, models=No
         trigger="cron",
         hour=SUMMARY_HOUR,
         minute=SUMMARY_MINUTE,
-        timezone=tz,
+        timezone=zone,
         id="evening_summary",
         coalesce=True,  # a missed window while offline sends once, not per miss
         misfire_grace_time=3600,

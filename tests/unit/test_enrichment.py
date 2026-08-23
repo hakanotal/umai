@@ -135,9 +135,7 @@ def test_cuisines_normalise_to_a_stable_order():
     """Stability matters: the list goes into the perception prompt, and an
     unstable prompt is an unstable fingerprint, which is what perception_runs
     exists to distinguish from model drift."""
-    assert cuisines.normalise(["italian", "turkish"]) == cuisines.normalise(
-        ["turkish", "italian"]
-    )
+    assert cuisines.normalise(["italian", "turkish"]) == cuisines.normalise(["turkish", "italian"])
 
 
 def test_unknown_and_duplicate_cuisines_are_dropped():

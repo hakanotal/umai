@@ -329,17 +329,52 @@ async def summary_line(session: AsyncSession, user: User, clock: Clock) -> str:
 
 
 async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:
-    """The last seven days, trend language, no single-day judgement."""
+    """The last seven days, trend language, no single-day judgement.
 
-    days: list[str] = []
+    Steps sit beside intake rather than being netted against it: the plan's
+    standing rule is that activity never adds calories back to the budget. Seen
+    as a column, though, they are the context that makes a heavy day legible —
+    which is the "your step count dropped 30% this week" use the plan does
+    sanction.
+
+    A day is listed if it has food *or* steps. A day where the phone synced and
+    nothing was logged is a real fact about the week, and hiding it would make
+    a gap in logging look like a gap in living.
+    """
+    today_local = local_date(clock.now(), user.tz)
+    first = today_local - dt.timedelta(days=6)
+
+    # One query for the whole range rather than seven, since the step read is
+    # already grouped per day in SQL.
+    steps_by_day = await tools.steps_by_day(session, user, first, today_local)
+
+    lines: list[str] = []
+    step_total = 0
+    step_days = 0
     for back in range(7):
-        day = local_date(clock.now(), user.tz) - dt.timedelta(days=back)
+        day = today_local - dt.timedelta(days=back)
         totals = await tools.day_totals(session, user, clock, day)
-        if totals.entry_count or totals.kcal:
-            days.append(f"  {day:%a %d}: {totals.kcal:.0f} kcal, P {totals.protein_g:.0f}g")
-    if not days:
+        steps = steps_by_day.get(day)
+        if not (totals.entry_count or totals.kcal or steps):
+            continue
+
+        parts = [f"{totals.kcal:.0f} kcal", f"P {totals.protein_g:.0f}g"]
+        if steps is not None and not steps.suspect:
+            parts.append(f"{steps.steps:,} steps")
+            step_total += steps.steps
+            step_days += 1
+        lines.append(f"  {day:%a %d}: " + ", ".join(parts))
+
+    if not lines:
         return "Nothing logged in the last seven days."
-    return "Last seven days:\n" + "\n".join(reversed(days))
+
+    out = "Last seven days:\n" + "\n".join(reversed(lines))
+    if step_days:
+        # Averaged over the days the phone actually reported, not over seven: a
+        # day that never synced is missing data, and dividing by it would
+        # report a fall in activity that did not happen.
+        out += f"\nSteps: {step_total:,} over {step_days} day(s), {step_total // step_days:,}/day"
+    return out
 
 
 # ---------------------------------------------------------------------------

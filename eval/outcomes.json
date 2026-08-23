@@ -1,0 +1,694 @@
+[
+  {
+    "photo": "IMG_1181.jpeg",
+    "repeat": 0,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 57168,
+    "overall_confidence": 0.55,
+    "clarifying_question": "Could you confirm the size of the red bowl (is it the 16 cm soup bowl or the 12 cm small bowl) and whether the white-bowl vegetable dish contains egg or is purely vegetables? This would tighten the weight and identity estimates.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "tomato and cucumber salad (domates salatası)",
+        "state": "raw",
+        "grams": 220.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Red patterned bowl estimated at ~16 cm diameter (soup-bowl size) from comparison with the 12 cm white bowl and table tiles; bowl ~half full of diced fresh vegetables, density near water."
+      },
+      {
+        "name": "grilled sliced beef steak",
+        "state": "grilled",
+        "grams": 180.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Wooden cutting board (~30-35 cm long) used as scale; pile of sliced cooked meat spans roughly half the board, consistent with a single sliced steak portion."
+      },
+      {
+        "name": "sautéed mixed peppers and vegetables (patlıcan/biber yemeği)",
+        "state": "fried",
+        "grams": 200.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.6,
+        "reference_used": "White bowl matched to the 12 cm / 250 ml small bowl; bowl ~70-80% full of glossy cooked vegetable medley, including a small amount of cooking oil."
+      },
+      {
+        "name": "roasted potato halves",
+        "state": "roasted",
+        "grams": 150.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Patterned side plate compared against the 26 cm dinner plate and table tiles; scattered roasted potato pieces cover a moderate portion of the plate surface."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_1181.jpeg",
+    "repeat": 1,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 80431,
+    "overall_confidence": 0.55,
+    "clarifying_question": "Could you confirm the size of the red bowl and the white bowl (soup bowl vs small bowl), and whether the vegetable mix was pan-sautéed or stewed? This would tighten the weight estimates.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "chopped tomato-cucumber salad (çoban salatası)",
+        "state": "raw",
+        "grams": 120.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Red patterned bowl matches the soup bowl (16 cm dia, 450 ml); salad fills roughly one third of the bowl, i.e. ~120-150 ml of chopped fresh vegetables at ~0.9 g/ml."
+      },
+      {
+        "name": "sliced grilled beef steak",
+        "state": "grilled",
+        "grams": 220.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Wooden cutting board (~30-35 cm long); the sliced meat pile covers about half the board surface, consistent with a ~200-250 g cooked steak portion."
+      },
+      {
+        "name": "sautéed mixed vegetables (peppers, onion, eggplant/zucchini)",
+        "state": "fried",
+        "grams": 150.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.6,
+        "reference_used": "White bowl matches the small bowl (12 cm dia, 250 ml); filled about two thirds with pan-cooked vegetables at ~0.9-1.0 g/ml, plus a small amount of cooking oil."
+      },
+      {
+        "name": "roasted potato chunks",
+        "state": "roasted",
+        "grams": 180.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Patterned dinner plate (26 cm dia); the golden potato pieces cover roughly one third of the plate, consistent with a ~150-200 g roasted potato portion."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_1181.jpeg",
+    "repeat": 2,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 36079,
+    "overall_confidence": 0.55,
+    "clarifying_question": "Could you confirm the white-bowl vegetable dish (is it a sautéed pepper/eggplant stew or something else) and roughly how much of the salad and potatoes remain vs. already eaten? That would tighten the weight estimates.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "chopped tomato-cucumber salad (coban salatasi)",
+        "state": "raw",
+        "grams": 200.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Red patterned bowl matches the 16 cm / 450 ml soup bowl; salad fills roughly 40-50% of it (~200-250 ml), density of chopped raw veg ~0.8-0.9 g/ml. Bowl is partly eaten (residue on inner wall)."
+      },
+      {
+        "name": "sliced grilled beef steak",
+        "state": "grilled",
+        "grams": 180.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.85,
+        "reference_used": "Wooden cutting board ~30-35 cm long; the sliced steak pile covers roughly half the board surface. Sliced medium-rare beef with charred edges. No direct scale, so estimate from board area and typical steak thickness."
+      },
+      {
+        "name": "sautéed mixed vegetable dish (peppers, onion, tomato, possibly eggplant)",
+        "state": "fried",
+        "grams": 280.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.6,
+        "reference_used": "White fluted bowl comparable to the 16 cm soup bowl; filled ~60-70% with cooked, oil-coated vegetables (~250-300 ml), density ~0.9-1.0 g/ml. Spoon present. Exact composition uncertain."
+      },
+      {
+        "name": "roasted small potatoes (halved/quartered)",
+        "state": "roasted",
+        "grams": 220.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Patterned plate ~20-24 cm across (consistent with the 26 cm dinner plate or slightly smaller); ~20-25 small browned potato halves. Estimate from piece count and typical small-potato weight."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_2932.jpeg",
+    "repeat": 0,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 56584,
+    "overall_confidence": 0.6,
+    "clarifying_question": "Is the rectangular piece a separate pizza (e.g. a different topping) or a cut from the same pizza as the triangular slice? This affects whether the two should be tracked as one dish or two.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "margherita pizza slice (triangular, neapolitan-style with tomato sauce, mozzarella and fresh basil)",
+        "state": "baked",
+        "grams": 220.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Paper plate approximated to the 26 cm dinner plate; the triangular slice spans most of the plate width (~20-22 cm) with a thick puffy crust, consistent with roughly a quarter of a 30 cm pizza."
+      },
+      {
+        "name": "white/vegetable pizza slice (rectangular, with green vegetables such as zucchini/peppers and melted cheese)",
+        "state": "baked",
+        "grams": 130.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "Same 26 cm plate reference; the rectangular piece is roughly 10-12 cm on a side, about half the area of the triangular slice."
+      },
+      {
+        "name": "coca-cola (carbonated soft drink)",
+        "state": "liquid",
+        "grams": 330.0,
+        "grams_confidence": 0.7,
+        "identity_confidence": 0.95,
+        "reference_used": "Standard 330 ml aluminium can; liquid volume taken as 330 ml at ~1.0 g/ml."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_2932.jpeg",
+    "repeat": 1,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 17475,
+    "overall_confidence": 0.6,
+    "clarifying_question": "The two small glass shakers (dried herbs and red chili flakes) are condiments on the table, not part of the consumed meal — should I include any amount of them, or treat them as zero?",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "wood-fired pizza slice with tomato sauce, mozzarella and fresh basil (triangular slice, thick puffed crust)",
+        "state": "baked",
+        "grams": 180.0,
+        "grams_confidence": 0.55,
+        "identity_confidence": 0.9,
+        "reference_used": "Standard 330 ml Coca-Cola can (~12 cm tall, 6.6 cm diameter) used as scale cue; fluted paper plate approximated to a ~25 cm dinner plate. Slice length tip-to-crust ~16-18 cm with a thick cornicione, sauce and cheese layer."
+      },
+      {
+        "name": "square-cut pizza slice with melted cheese, green herbs and white cheese chunks (pizza al taglio style)",
+        "state": "baked",
+        "grams": 140.0,
+        "grams_confidence": 0.55,
+        "identity_confidence": 0.85,
+        "reference_used": "Same Coke-can scale cue and ~25 cm paper plate reference; square slice roughly 10-12 cm per side with a thick base and cheese topping."
+      },
+      {
+        "name": "coca-cola (carbonated soft drink, red can)",
+        "state": "liquid",
+        "grams": 340.0,
+        "grams_confidence": 0.8,
+        "identity_confidence": 0.95,
+        "reference_used": "Standard 330 ml can; density of cola ~1.04 g/ml gives ~340 g. Can dimensions are a known standard."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_2932.jpeg",
+    "repeat": 2,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 16002,
+    "overall_confidence": 0.55,
+    "clarifying_question": "Are the two small glass shakers (dried herbs/pepper and red pepper flakes) being added to the pizza? If so, how much (a pinch vs a generous shake) so I can account for that added weight?",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "margherita-style pizza slice (tomato sauce, mozzarella, fresh basil)",
+        "state": "baked",
+        "grams": 210.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.85,
+        "reference_used": "Paper plate ~26 cm diameter (matched to user's 26 cm dinner plate). Triangular slice spans tip-to-crust ~17-19 cm and crust width ~10 cm, i.e. a large slice from a 12-14 in wood-fired pizza with a thick puffy cornicione; consistent with ~200-230 g per slice."
+      },
+      {
+        "name": "white/vegetable pizza slice (melted cheese, green vegetables, white cheese blobs)",
+        "state": "baked",
+        "grams": 130.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.7,
+        "reference_used": "Same ~26 cm paper plate. Rectangular piece ~11 cm x 8 cm x ~1.5 cm thick; volume-based estimate ~120-140 g. Vegetable type (zucchini/spinach) uncertain."
+      },
+      {
+        "name": "coca-cola (cola, carbonated soft drink)",
+        "state": "liquid",
+        "grams": 360.0,
+        "grams_confidence": 0.6,
+        "identity_confidence": 0.95,
+        "reference_used": "Standard 12 fl oz (355 ml) aluminium can, full. 355 ml x density ~1.04 g/ml ≈ 360 g (can shell ~15 g not included)."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_3580.jpeg",
+    "repeat": 0,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 12916,
+    "overall_confidence": 0.6,
+    "clarifying_question": "Is this a single croissant with pistachio topping, or does it include a separate small pistachio-cream roll at the left end that should be counted apart?",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "pistachio croissant (laminated croissant with pistachio cream and chopped pistachio topping, powdered sugar dusting)",
+        "state": "baked",
+        "grams": 100.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "No known-dimension object in frame. Used typical croissant length (~16-18 cm) and standard croissant mass (~70 g) as a baseline, then added ~20-30 g for the visible pistachio cream layer and chopped pistachios on top. The branded paper wrapper and metal mesh table give no calibrated scale, so confidence is kept moderate."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_3580.jpeg",
+    "repeat": 1,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 21011,
+    "overall_confidence": 0.6,
+    "clarifying_question": "Is this a single filled croissant, or are there two pieces (the small green-coated roll on the left could be a separate item)?",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "pistachio croissant (laminated croissant filled/topped with pistachio cream and chopped pistachios, dusted with powdered sugar)",
+        "state": "baked",
+        "grams": 110.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.85,
+        "reference_used": "No known dinnerware in frame. Used the branded bakery paper wrapper (roughly 20 cm wide) and the metal mesh table grid as scale cues; the croissant spans most of the wrapper width (~18-20 cm), consistent with a large filled croissant. No direct scale reference, so confidence kept moderate."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_3580.jpeg",
+    "repeat": 2,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 13398,
+    "overall_confidence": 0.6,
+    "clarifying_question": "Is this a single filled croissant, or are there additional items (e.g., a drink or second pastry) not in frame that you want tracked?",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "pistachio-filled croissant (pistachio cream filling, chopped pistachio and powdered sugar topping) — boudin bakery pastry",
+        "state": "baked",
+        "grams": 130.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.85,
+        "reference_used": "No known dinnerware is in frame; the item rests on a Boudin bakery paper wrapper (~20 cm wide) on a metal mesh table. Estimated from the croissant's apparent length (~18-20 cm) and the generous visible filling/topping relative to the wrapper. No cutlery or hand for scale."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_4205.jpeg",
+    "repeat": 0,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 24368,
+    "overall_confidence": 0.6,
+    "clarifying_question": "Is the black dish the 26 cm dinner plate or a deeper bowl? And is the rice a full base layer or just a small garnish underneath?",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "salmon fillet (seasoned, pan-seared)",
+        "state": "grilled",
+        "grams": 180.0,
+        "grams_confidence": 0.55,
+        "identity_confidence": 0.95,
+        "reference_used": "26 cm dinner plate diameter; fillet spans ~11 cm x 7 cm and ~2.5 cm thick, covering roughly a third of the plate surface"
+      },
+      {
+        "name": "broccoli florets",
+        "state": "steamed",
+        "grams": 130.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.95,
+        "reference_used": "26 cm dinner plate; ~9-10 medium florets distributed around the rim and base"
+      },
+      {
+        "name": "new potatoes (whole, with skin)",
+        "state": "roasted",
+        "grams": 250.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "26 cm dinner plate; ~6 small whole new potatoes each ~4-5 cm across, clustered on the right side"
+      },
+      {
+        "name": "white rice",
+        "state": "boiled",
+        "grams": 120.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "26 cm dinner plate; visible as a base layer peeking out under the broccoli and potatoes at the bottom edge"
+      }
+    ]
+  },
+  {
+    "photo": "IMG_4205.jpeg",
+    "repeat": 1,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 13202,
+    "overall_confidence": 0.6,
+    "clarifying_question": "Is the black container the 26 cm dinner plate or a deeper bowl? A deeper bowl would shift the rice and potato estimates upward.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "grilled salmon fillet (two pieces, seasoned crust)",
+        "state": "grilled",
+        "grams": 220.0,
+        "grams_confidence": 0.55,
+        "identity_confidence": 0.9,
+        "reference_used": "26 cm dinner plate diameter as scale cue; the two salmon pieces together span roughly half the plate's central area, consistent with a ~200-250 g serving."
+      },
+      {
+        "name": "broccoli florets",
+        "state": "steamed",
+        "grams": 160.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "26 cm plate; ~9-10 florets ring the perimeter, each roughly 15-20 g, giving a typical 150-180 g vegetable portion."
+      },
+      {
+        "name": "baby potatoes (whole, with skin)",
+        "state": "roasted",
+        "grams": 220.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.85,
+        "reference_used": "26 cm plate; ~7 small whole potatoes on the right side, each ~30-40 g, totaling ~200-250 g."
+      },
+      {
+        "name": "white rice",
+        "state": "boiled",
+        "grams": 120.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.8,
+        "reference_used": "26 cm plate; white grains visible as a bed beneath the broccoli and around the lower edge, partially hidden, estimated at a modest ~100-150 g cooked portion."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_4205.jpeg",
+    "repeat": 2,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 41993,
+    "overall_confidence": 0.55,
+    "clarifying_question": "Is the white rice a deliberate base layer (and roughly how much), and were the potatoes roasted or boiled? This would let me firm up the two lowest-confidence weights.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "salmon fillet (seasoned, skin-on)",
+        "state": "grilled",
+        "grams": 230.0,
+        "grams_confidence": 0.55,
+        "identity_confidence": 0.95,
+        "reference_used": "Two fillets on a ~24-26 cm black bowl (scaled against the known 26 cm dinner plate and table grain). Left fillet ~11 cm x 6 cm x ~2 cm thick (~150 g), right fillet ~8 cm (~80 g). Glossy sheen suggests a light coating of oil folded into this weight."
+      },
+      {
+        "name": "broccoli florets",
+        "state": "steamed",
+        "grams": 180.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.95,
+        "reference_used": "Roughly 9-10 medium florets arranged around the rim of the ~24-26 cm bowl; vibrant green, no charring, consistent with steaming. Sized against bowl diameter."
+      },
+      {
+        "name": "baby potatoes (skin-on)",
+        "state": "roasted",
+        "grams": 270.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Six small whole new potatoes on the right side of the bowl, each ~4-5 cm across (~45 g each). Slight skin wrinkling and browning indicate roasting/baking. Sized against bowl diameter."
+      },
+      {
+        "name": "white rice",
+        "state": "boiled",
+        "grams": 120.0,
+        "grams_confidence": 0.4,
+        "identity_confidence": 0.8,
+        "reference_used": "White grains visible as a base layer peeking out under the broccoli and potatoes at the bottom and edges of the bowl. Only partially visible, so estimate is a lower-bound guess against bowl area."
+      },
+      {
+        "name": "cooking oil",
+        "state": "liquid",
+        "grams": 10.0,
+        "grams_confidence": 0.3,
+        "identity_confidence": 0.6,
+        "reference_used": "No pooling visible; only a light glossy sheen on salmon and potatoes. Estimated as roughly one teaspoon of oil used in cooking, not a measured pool."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_4216.jpeg",
+    "repeat": 0,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 81700,
+    "overall_confidence": 0.5,
+    "clarifying_question": "These are meal-prep containers not in your measured dinnerware list, so my weights are rough. If you can tell me the dimensions (or model) of the rectangular and round containers, I can tighten the gram estimates.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "white rice (boiled) – round glass bowl",
+        "state": "boiled",
+        "grams": 160.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact dimension for this glass bowl (not in known dinnerware list); estimated from typical ~16-18 cm bowl size and the visible rice base layer under the chicken/broccoli. No cutlery or known-dimension object in frame for direct scaling."
+      },
+      {
+        "name": "marinated grilled chicken – round glass bowl",
+        "state": "grilled",
+        "grams": 130.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "No exact dimension for this glass bowl; estimated from piece size relative to bowl and typical chicken portion. Charred edges and reddish glaze indicate grilled/roasted with marinade."
+      },
+      {
+        "name": "steamed broccoli – round glass bowl",
+        "state": "steamed",
+        "grams": 100.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact dimension for this glass bowl; estimated from ~5-6 medium florets (each ~15-20 g) arranged around the chicken."
+      },
+      {
+        "name": "white rice (boiled) – left rectangular container",
+        "state": "boiled",
+        "grams": 200.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact dimension for this meal-prep container (not in known dinnerware list); estimated from typical ~20x14x6 cm rectangular container and the rice base layer visible at the edges. No cutlery or known-dimension object in frame for direct scaling."
+      },
+      {
+        "name": "marinated grilled chicken – left rectangular container",
+        "state": "grilled",
+        "grams": 150.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "No exact dimension for this container; estimated from two large chicken pieces with reddish marinade and char marks, relative to container footprint."
+      },
+      {
+        "name": "steamed broccoli – left rectangular container",
+        "state": "steamed",
+        "grams": 120.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact dimension for this container; estimated from ~5-6 medium florets (each ~15-20 g) placed over the rice and chicken."
+      },
+      {
+        "name": "white rice (boiled) – right rectangular container",
+        "state": "boiled",
+        "grams": 200.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact dimension for this meal-prep container (not in known dinnerware list); estimated from typical ~20x14x6 cm rectangular container and the rice base layer visible at the edges. No cutlery or known-dimension object in frame for direct scaling."
+      },
+      {
+        "name": "marinated grilled chicken – right rectangular container",
+        "state": "grilled",
+        "grams": 150.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "No exact dimension for this container; estimated from two large chicken pieces with reddish marinade and char marks, relative to container footprint."
+      },
+      {
+        "name": "steamed broccoli – right rectangular container",
+        "state": "steamed",
+        "grams": 120.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact dimension for this container; estimated from ~5 medium florets (each ~15-20 g) placed over the rice and chicken."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_4216.jpeg",
+    "repeat": 1,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 14351,
+    "overall_confidence": 0.5,
+    "clarifying_question": "These are meal-prep containers, not your measured dinnerware, so my weights are rough. If you can tell me the dimensions (or capacity in ml) of the round glass bowl and the rectangular containers, I can tighten the estimates.",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "white rice (round glass bowl)",
+        "state": "boiled",
+        "grams": 150.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact scale reference: these are meal-prep containers, not the user's measured dinnerware. Estimated from typical round glass prep bowl size (~18-20 cm) and the visible rice bed under the chicken/broccoli; granite countertop grain used as a rough size cue."
+      },
+      {
+        "name": "grilled marinated chicken (round glass bowl)",
+        "state": "grilled",
+        "grams": 130.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "Same as above; chicken pieces compared against the bowl diameter and the teal lid beside it as a size cue."
+      },
+      {
+        "name": "steamed broccoli (round glass bowl)",
+        "state": "steamed",
+        "grams": 100.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.95,
+        "reference_used": "Same as above; ~6-8 florets estimated against bowl size."
+      },
+      {
+        "name": "white rice (left rectangular container)",
+        "state": "boiled",
+        "grams": 160.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact scale reference for the rectangular prep container; estimated from typical ~20x14 cm container and the visible rice bed around the edges."
+      },
+      {
+        "name": "grilled marinated chicken (left rectangular container)",
+        "state": "grilled",
+        "grams": 140.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "Two chicken pieces compared against container width and the adjacent container as a size cue."
+      },
+      {
+        "name": "steamed broccoli (left rectangular container)",
+        "state": "steamed",
+        "grams": 110.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.95,
+        "reference_used": "~5-6 florets estimated against container size."
+      },
+      {
+        "name": "white rice (right rectangular container)",
+        "state": "boiled",
+        "grams": 160.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.9,
+        "reference_used": "No exact scale reference; estimated from typical rectangular prep container and visible rice bed."
+      },
+      {
+        "name": "grilled marinated chicken (right rectangular container)",
+        "state": "grilled",
+        "grams": 140.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.85,
+        "reference_used": "Two chicken pieces compared against container width."
+      },
+      {
+        "name": "steamed broccoli (right rectangular container)",
+        "state": "steamed",
+        "grams": 110.0,
+        "grams_confidence": 0.45,
+        "identity_confidence": 0.95,
+        "reference_used": "~5-6 florets estimated against container size."
+      }
+    ]
+  },
+  {
+    "photo": "IMG_4216.jpeg",
+    "repeat": 2,
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 27415,
+    "overall_confidence": 0.55,
+    "clarifying_question": "These are three separate meal-prep containers of the same dish (grilled chicken, white rice, steamed broccoli). I have estimated each container's components individually. If you only want the total for one serving, let me know which container to treat as the single portion, and confirm whether the chicken is breast or thigh (affects the downstream composition lookup).",
+    "discarded_nutrition": false,
+    "prompt_fingerprint": "e8fe95b5a2d34aa8",
+    "items": [
+      {
+        "name": "grilled spice-rubbed chicken (round glass bowl, top)",
+        "state": "grilled",
+        "grams": 130.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Round glass bowl ~18-20 cm diameter cross-checked against 26 cm dinner plate and 19 cm fork; 2-3 marinated pieces with charred edges filling the upper half of the bowl."
+      },
+      {
+        "name": "white rice (round glass bowl, top)",
+        "state": "boiled",
+        "grams": 150.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Rice layer visible at the base/edges of the round bowl beneath the chicken and broccoli; estimated from bowl volume and fill level."
+      },
+      {
+        "name": "steamed broccoli (round glass bowl, top)",
+        "state": "steamed",
+        "grams": 100.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.95,
+        "reference_used": "Approx. 5-6 florets scattered on top; floret size compared to 19 cm fork scale."
+      },
+      {
+        "name": "grilled spice-rubbed chicken (bottom-left rectangular container)",
+        "state": "grilled",
+        "grams": 140.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Two substantial marinated pieces with charred edges in a ~20 cm x 12 cm meal-prep container, cross-checked against 26 cm dinner plate."
+      },
+      {
+        "name": "white rice (bottom-left rectangular container)",
+        "state": "boiled",
+        "grams": 180.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Rice layer visible around edges and under chicken/broccoli; compacted grain fill of a ~20 cm x 12 cm x ~6 cm container."
+      },
+      {
+        "name": "steamed broccoli (bottom-left rectangular container)",
+        "state": "steamed",
+        "grams": 110.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.95,
+        "reference_used": "Approx. 5 florets on top; floret size compared to 19 cm fork scale."
+      },
+      {
+        "name": "grilled spice-rubbed chicken (bottom-right rectangular container)",
+        "state": "grilled",
+        "grams": 140.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Two marinated pieces with charred edges in a ~20 cm x 12 cm meal-prep container, cross-checked against 26 cm dinner plate."
+      },
+      {
+        "name": "white rice (bottom-right rectangular container)",
+        "state": "boiled",
+        "grams": 180.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.9,
+        "reference_used": "Rice layer visible around edges and under chicken/broccoli; compacted grain fill of a ~20 cm x 12 cm x ~6 cm container."
+      },
+      {
+        "name": "steamed broccoli (bottom-right rectangular container)",
+        "state": "steamed",
+        "grams": 110.0,
+        "grams_confidence": 0.5,
+        "identity_confidence": 0.95,
+        "reference_used": "Approx. 5 florets on top; floret size compared to 19 cm fork scale."
+      }
+    ]
+  }
+]
