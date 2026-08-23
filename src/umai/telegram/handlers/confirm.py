@@ -23,7 +23,7 @@ from umai.analytics import safety
 from umai.clock import Clock
 from umai.config.settings import Settings
 from umai.core import tools
-from umai.db.models import EntryKind, EntrySource, FoodItem
+from umai.db.models import EntryKind, EntrySource, FoodItem, LogEntry
 from umai.db.session import session_scope
 from umai.telegram import keyboards
 from umai.telegram.handlers.common import (
@@ -133,7 +133,7 @@ async def number_received(
             await message.answer("That meal is too old to edit. Log it fresh, or tap ✏️ Edit today.")
             return
 
-        meal = await _fix_item_grams(session, entry_id, data["item_no"], value)
+        meal = await _fix_item_grams(session, user.id, entry_id, data["item_no"], value)
         if meal is None:
             await state.clear()
             await message.answer("I couldn't find that item. Tap ✏️ Edit today for the list.")
@@ -149,18 +149,30 @@ async def number_received(
 
 
 async def _fix_item_grams(
-    session: AsyncSession, entry_id: uuid.UUID, item_no: int, grams: float
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    item_no: int,
+    grams: float,
 ) -> tools.LoggedMeal | None:
     """Position order, the same order the confirmation message numbered.
 
     Returns the replacement meal, or None when the item number does not exist
     or the entry was already superseded — both of which used to be reported to
     the user as "Fixed." with nothing having changed.
+
+    The item query joins back to `log_entries` for the ownership predicate.
+    `food_items` carries no `user_id` of its own — it is scoped through its
+    entry — so filtering on `entry_id` alone trusts that the caller checked,
+    and the entry id came out of callback data.
     """
     items = (
         (
             await session.execute(
-                select(FoodItem).where(FoodItem.entry_id == entry_id).order_by(FoodItem.position)
+                select(FoodItem)
+                .join(LogEntry, FoodItem.entry_id == LogEntry.id)
+                .where(FoodItem.entry_id == entry_id, LogEntry.user_id == user_id)
+                .order_by(FoodItem.position)
             )
         )
         .scalars()
@@ -168,4 +180,6 @@ async def _fix_item_grams(
     )
     if not (1 <= item_no <= len(items)):
         return None
-    return await tools.supersede_with_grams(session, entry_id, {items[item_no - 1].id: grams})
+    return await tools.supersede_with_grams(
+        session, user_id, entry_id, {items[item_no - 1].id: grams}
+    )

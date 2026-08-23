@@ -113,7 +113,7 @@ async def test_a_superseded_entry_stops_being_a_gap(session, user):
         await session.execute(select(FoodItem.id).where(FoodItem.entry_id == meal.entry.id))
     ).scalar_one()
 
-    await tools.supersede_with_grams(session, meal.entry.id, {item_id: 0.0})
+    await tools.supersede_with_grams(session, user.id, meal.entry.id, {item_id: 0.0})
     await session.flush()
 
     gaps = await enrichment.pending_gaps(session, limit=50)

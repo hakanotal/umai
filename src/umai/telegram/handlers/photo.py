@@ -74,7 +74,7 @@ async def photo(
         if not sizes:
             await message.answer("That photo looks empty — try again?")
             return
-        path = await _download_with_retry(message, sizes[-1], settings)
+        path = await _download_with_retry(message, sizes[-1], settings, principal.id)
         if path is None:
             await message.answer("Couldn't fetch the photo from Telegram. Please try again.")
             return
@@ -90,7 +90,7 @@ async def photo(
                 local_time=clock.now().astimezone(ZoneInfo(tz)).strftime("%A %H:%M"),
                 note=message.caption or None,
             )
-            media_id = await _record_media(session, path, tz)
+            media_id = await _record_media(session, user_id, path, tz)
 
         # 2. the slow part, with nothing held.
         try:
@@ -130,41 +130,67 @@ async def photo(
                 await status.delete()
 
 
-async def _record_media(session: AsyncSession, path: Path, tz: str) -> uuid.UUID:
-    """Insert the media row, or return the existing one for this file.
+async def _record_media(
+    session: AsyncSession, user_id: uuid.UUID, path: Path, tz: str
+) -> uuid.UUID:
+    """Insert the media row, or return this user's existing one for this file.
 
-    sha256 is unique: the same photo sent twice is one media row, and the
-    `entry_id` on it is filled in by `agent.log_photo` once the entry it
+    The digest is unique **per user**, not globally. It was global, and the
+    second person to photograph the same tin of beans hit
+    `ON CONFLICT DO NOTHING`, got back the first person's row, and had their
+    meal attached to a stranger's entry.
+
+    The `entry_id` is filled in by `agent.log_photo` once the entry this
     produced exists. Both media rows from the first live session had a null
-    entry_id, which made "re-score this old photo" — the reason the file is
-    kept at all — impossible.
+    one, which made "re-score this old photo" — the reason the file is kept at
+    all — impossible.
     """
     digest = await asyncio.to_thread(image_tools.sha256_of, path)
     taken = await asyncio.to_thread(_taken_at_local, path, tz)
     stmt = (
         pg_insert(Media)
-        .values(id=uuid.uuid4(), path=str(path), sha256=digest, taken_at=taken)
-        .on_conflict_do_nothing(index_elements=["sha256"])
+        .values(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            path=str(path),
+            sha256=digest,
+            taken_at=taken,
+        )
+        .on_conflict_do_nothing(index_elements=["user_id", "sha256"])
         .returning(Media.id)
     )
     media_id = (await session.execute(stmt)).scalar_one_or_none()
     if media_id is None:
         media_id = (
-            await session.execute(select(Media.id).where(Media.sha256 == digest))
+            await session.execute(
+                select(Media.id).where(Media.user_id == user_id, Media.sha256 == digest)
+            )
         ).scalar_one()
     return media_id
 
 
 async def _download_with_retry(
-    message: Message, photo: PhotoSize, settings: Settings
+    message: Message, photo: PhotoSize, settings: Settings, user_id: uuid.UUID
 ) -> Path | None:
     """Telegram file downloads are two calls (getFile then fetch) and both can
-    fail independently, so the pair is retried together (gotcha list §12)."""
+    fail independently, so the pair is retried together (gotcha list §12).
+
+    One directory per user, and not only for tidiness. `file_unique_id` is
+    stable per file per *bot*, not per user, so in a flat directory two people
+    sending the same image resolve to the same path — and `if path.exists()`
+    then hands the second one the first one's file. The bytes are identical so
+    nothing leaks, but "delete everything you hold on me" would have deleted
+    somebody else's photo. Per-user directories also make that deletion an
+    `rm -rf` of one path.
+
+    Files written before this change keep working: the row records an absolute
+    path and nothing looks a photo up by recomputing its location.
+    """
     bot = message.bot
     if bot is None:
         return None
-    destination = Path(settings.media_dir)
-    destination.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240 - local disk, microseconds
+    destination = Path(settings.media_dir) / str(user_id)
+    destination.mkdir(parents=True, exist_ok=True)
     path = destination / f"{photo.file_unique_id}.jpg"
     if path.exists():
         return path

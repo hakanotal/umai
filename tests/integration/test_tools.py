@@ -204,7 +204,7 @@ async def test_a_gram_correction_supersedes_rather_than_mutates(session, user):
         await session.execute(select(FoodItem.id).where(FoodItem.entry_id == meal.entry.id))
     ).scalar_one()
 
-    fixed = await tools.supersede_with_grams(session, meal.entry.id, {item_id: 300.0})
+    fixed = await tools.supersede_with_grams(session, user.id, meal.entry.id, {item_id: 300.0})
 
     old = await session.get(LogEntry, meal.entry.id)
     assert old.superseded_by == fixed.entry.id
@@ -244,7 +244,7 @@ async def test_day_totals_count_only_the_newest_version(session, user):
     item_id = (
         await session.execute(select(FoodItem.id).where(FoodItem.entry_id == meal.entry.id))
     ).scalar_one()
-    await tools.supersede_with_grams(session, meal.entry.id, {item_id: 200.0})
+    await tools.supersede_with_grams(session, user.id, meal.entry.id, {item_id: 200.0})
 
     totals = await tools.day_totals(session, user, CLOCK)
     assert totals.kcal == pytest.approx(260.0)  # 200g, not 100+200

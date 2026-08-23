@@ -545,15 +545,26 @@ async def list_dinnerware(
 
 async def supersede_with_grams(
     session: AsyncSession,
+    user_id: uuid.UUID,
     entry_id: uuid.UUID,
     new_grams_by_item: dict[uuid.UUID, float],
 ) -> LoggedMeal | None:
     """Replace an entry with corrected grams. The original row is never
     mutated; it is pointed at its replacement and a Correction row records the
-    change, which is what keeps the audit trail honest."""
+    change, which is what keeps the audit trail honest.
+
+    `user_id` is required and is checked, like its sibling `hard_delete_entry`
+    always did. Every caller today reaches this through `live_entry_by_prefix`,
+    which is already user-scoped, so nothing was exploitable — but the entry id
+    arrives in callback data, which is attacker-controlled, and the safety was
+    living in the callers rather than here. The first person to add a caller
+    would have removed it without noticing.
+    """
     old = (
         await session.execute(
-            select(LogEntry).options(selectinload(LogEntry.items)).where(LogEntry.id == entry_id)
+            select(LogEntry)
+            .options(selectinload(LogEntry.items))
+            .where(LogEntry.id == entry_id, LogEntry.user_id == user_id)
         )
     ).scalar_one_or_none()
     if old is None or old.superseded_by is not None:

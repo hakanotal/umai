@@ -121,7 +121,7 @@ async def test_today_entries_excludes_superseded_and_other_days(session, user):
         await session.execute(select(FoodItem).where(FoodItem.entry_id == meal.entry.id))
     ).scalars()
     item_id = next(items).id
-    await tools.supersede_with_grams(session, meal.entry.id, {item_id: 200.0})
+    await tools.supersede_with_grams(session, user.id, meal.entry.id, {item_id: 200.0})
 
     # An entry from two days ago is not today's business.
     await tools.log_simple(
@@ -184,7 +184,7 @@ async def test_hard_delete_clears_the_corrections_rows(session, user):
         await session.execute(select(FoodItem).where(FoodItem.entry_id == meal.entry.id))
     ).scalars()
     item_id = next(items).id
-    fixed = await tools.supersede_with_grams(session, meal.entry.id, {item_id: 200.0})
+    fixed = await tools.supersede_with_grams(session, user.id, meal.entry.id, {item_id: 200.0})
     # Scoped to this entry, not table-wide, same reasoning as above.
     n_corrections = (
         await session.execute(
@@ -222,7 +222,7 @@ async def test_hard_delete_refuses_an_inner_chain_link(session, user):
         await session.execute(select(FoodItem).where(FoodItem.entry_id == meal.entry.id))
     ).scalars()
     item_id = next(items).id
-    fixed = await tools.supersede_with_grams(session, meal.entry.id, {item_id: 200.0})
+    fixed = await tools.supersede_with_grams(session, user.id, meal.entry.id, {item_id: 200.0})
 
     # The superseded original is not addressable: deleting it would corrupt
     # the live entry's chain.
