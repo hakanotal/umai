@@ -99,9 +99,7 @@ async def record(port: int, out_dir: Path) -> int:
         # not queue it for redelivery.
         return {"ok": True}
 
-    server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    )
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     serving = asyncio.create_task(server.serve())
     print(f"listening on 127.0.0.1:{port} for one POST to /ingest/health — ctrl-c to give up")
     try:

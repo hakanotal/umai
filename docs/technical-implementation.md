@@ -81,9 +81,16 @@ umai/
 ├── uv.lock
 ├── justfile                       # dev, test, migrate, deploy recipes
 ├── .env.example                   # committed. .env is not.
-├── docker-compose.dev.yml         # local: Postgres only
+├── docker-compose.dev.yml         # local: Postgres + pgAdmin
+├── docker-compose.app.yml         # local: the prod image against the dev DB
 ├── docker-compose.yml             # Pi: full stack
 ├── Dockerfile
+├── README.md                      # the front door
+├── CLAUDE.md                      # the invariants, for whoever writes here next
+├── docs/                          # this file, the plan, progress, papers/, the logo
+├── ops/pgadmin/                   # pre-registered server, so pgAdmin needs no ritual
+├── sql/                           # ready-made inspection queries, mounted at /sql
+├── eval/                          # standalone photo-baseline harness, own conventions
 ├── alembic/
 │   └── versions/
 ├── src/umai/
@@ -104,11 +111,17 @@ umai/
 │   │   └── importers/             # turkomp, usda, openfoodfacts, label_photo
 │   ├── core/
 │   │   ├── agent.py               # intent routing, tool dispatch
-│   │   ├── tools.py               # the tool implementations
-│   │   └── prompts/               # persona, coaching constraints
+│   │   ├── tools.py               # the only food write path
+│   │   ├── enrichment.py          # the one place model output becomes a calorie
+│   │   ├── cuisines.py            # perception context, not a preference
+│   │   └── fndds.py               # the FNDDS reference lookup
 │   ├── telegram/
 │   │   ├── app.py                 # polling in dev, webhook in prod
-│   │   ├── handlers/
+│   │   ├── handlers/              # one module per feature, one Router each;
+│   │   │                          #   __init__.py composes them, in an order
+│   │   │                          #   that is load-bearing (see below)
+│   │   │   common.py  commands.py  cuisines.py  dinnerware.py  recipes.py
+│   │   │   library.py  menu.py  edit.py  confirm.py  photo.py  text.py
 │   │   └── keyboards.py
 │   ├── ingest/
 │   │   └── health.py              # Health Auto Export webhook
@@ -124,16 +137,31 @@ umai/
 │       └── static/
 ├── tests/
 │   ├── cassettes/                 # recorded model responses
-│   ├── fixtures/                  # real Health Auto Export payloads
 │   ├── unit/
-│   ├── integration/
-│   └── sim/                       # synthetic history, calibration simulator
+│   └── integration/               # needs a real Postgres
 └── tools/
     ├── seed_foods.py
+    ├── seed_fndds.py
+    ├── extract_fndds.py
     ├── replay_health.py
-    ├── simulate.py
-    └── benchmark_perception.py    # wraps eval/run_eval.py against the real code path
+    ├── perceive.py                # the 24-photo perception run
+    └── simulate.py                # plant a known TDEE and bias, check recovery
 ```
+
+`telegram/handlers/` was one 1,154-line module and is now one per feature, each owning its own
+`Router`. The split is not cosmetic filing: aiogram offers an update to routers in registration
+order and stops at the first handler that matches, so the include list in `handlers/__init__.py`
+encodes dispatch behaviour. `menu` precedes `text` because the reply-keyboard buttons arrive as
+ordinary text and a button tap must never cost a model call; `recipes` and `confirm` precede it
+because each owns an FSM state that consumes a plain message, and behind the catch-all a pending
+ingredient or gram answer would be classified as a new meal; `text` is last because it matches
+everything, and anything registered after it is unreachable. Sorting that list alphabetically
+would silently break the bot while every test still passed, which is why the order carries a
+comment in the file rather than only here.
+
+Helpers shared by two or more routers live in `handlers/common.py` — the FSM states, the
+callback-data accessors, the entry-prefix lookups, the enrichment nudge. A helper with exactly
+one caller stays in that caller's module, beside the reasoning that explains it.
 
 ---
 
@@ -493,6 +521,22 @@ than any bug.
 Both are arm64, so images are portable. Do not build on the Pi: it is slow and it puts a build
 toolchain on the machine holding your data.
 
+`.dockerignore` is load-bearing for build time rather than for correctness. The Dockerfile copies
+`src/`, `alembic/`, the lockfile and the README — about a megabyte — but the daemon receives the
+whole directory before the first `COPY` is evaluated, and unignored that was 509MB: a host
+virtualenv built for the wrong platform, the food photo archive, and the licensed PDFs under
+`docs/papers/`. Excluding them takes the context to 77 files and 1.2MB, most of it `uv.lock`.
+It excludes by denial rather than by allowlist, so a new source directory reaches the image by
+default and a new pile of data does not.
+
+The patterns are `**/`-prefixed wherever the target can nest, because **Docker does not match the
+way `.gitignore` does**: a bare `__pycache__/` matches only a top-level directory, so every
+nested one shipped regardless. That leak is invisible from the outside — the build succeeds, and
+the Dockerfile's explicit `COPY` keeps the junk out of the finished image — so the context size
+is the only symptom. To see what is actually being sent, build a throwaway
+`FROM busybox / COPY . /ctx / RUN find /ctx -type f` and read the list; the "transferring
+context" figure in normal build output is a BuildKit delta, not the total.
+
 ```mermaid
 flowchart LR
     dev["MacBook<br/>arm64"] -->|"docker buildx<br/>--platform linux/arm64"| img["Image"]
@@ -531,6 +575,15 @@ logs in a terminal.
 ---
 
 ## 12. Gotchas
+
+**`.dockerignore` is not `.gitignore`.** Git treats a bare `papers/` or `__pycache__/` as "at any
+depth"; Docker treats it as "at the context root". A pattern copied from one file to the other
+silently stops matching everything nested, and nothing complains — the build still succeeds, and
+because the Dockerfile names what it copies, the image is still correct. Only the context size
+shows it. Prefix with `**/` anything that can nest, and verify by listing the context rather than
+by reading the file: `FROM busybox` + `COPY . /ctx` + `RUN find /ctx -type f`. The "transferring
+context" line in ordinary build output is a BuildKit delta against the previous build, so a small
+number there is not evidence of a small context.
 
 **Resize images before sending them.** A modern iPhone photo is 4032x3024 and roughly 3MB.
 Most of that resolution is discarded by the model's tiling anyway, but you pay tokens and latency

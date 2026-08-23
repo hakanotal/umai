@@ -1,0 +1,60 @@
+# The Dockerfile copies src/, alembic/, pyproject.toml, uv.lock and README.md —
+# about a megabyte. Without this file the build context was 509MB, because the
+# daemon is handed the whole directory before the first COPY is evaluated:
+# a 272MB host virtualenv (wrong platform, never used), 141MB of food photos
+# and 23MB of licensed PDFs, transferred on every build.
+#
+# Deny by exclusion rather than by allowlist: a new source directory should
+# reach the image by default, and a new pile of data should not.
+#
+# Patterns are `**/`-prefixed wherever the target can nest. Docker does NOT
+# match the way .gitignore does: a bare `__pycache__/` matches only a
+# top-level directory, so every nested one shipped anyway. That leak is
+# invisible — the build succeeds and the Dockerfile's explicit COPY keeps the
+# junk out of the image, so only the context size ever shows it.
+
+# the host virtualenv: built for the host, rebuilt inside the image anyway
+.venv/
+**/*.egg-info/
+
+# personal data that must never enter an image layer.
+# papers/ is matched at any depth, like the .gitignore rule: the directory has
+# already moved from the repo root to docs/ once, and a path-pinned rule would
+# have stopped matching silently the next time.
+data/
+**/papers/
+eval/photos/
+eval/results/
+eval/truth.csv
+eval/dinnerware.json
+
+# secrets. Settings reads these from the environment at runtime, never a layer.
+.env
+.local.env
+**/*.env
+!.env.example
+
+# caches and history
+.git/
+.gitignore
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+# nothing here changes the image, and each entry invalidates the cache
+docs/
+tests/
+sql/
+ops/
+justfile
+docker-compose*.yml
+Dockerfile
+.dockerignore
+CLAUDE.md
+**/*.md
+!README.md
+
+# macos
+**/.DS_Store

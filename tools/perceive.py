@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone stage-1 perception: photo path in, items/state/grams out.
 
-Build-order step 1 (technical-implementation.md section 13). No database, no
+Build-order step 1 (docs/technical-implementation.md section 13). No database, no
 bot, no Telegram. Takes a photo or directory and runs it through the *real*
 perception code path -- ModelClient, perception.client.PerceptionClient,
 perception.images, perception.prompt, perception.schema -- so the single
@@ -304,9 +304,10 @@ def main() -> int:
 
         with ThreadPoolExecutor(max_workers=args.parallel) as pool:
             futures = {
-                pool.submit(
-                    lambda ph=photo: asyncio.run(client.analyse(ph, contexts[ph.name]))
-                ): (photo, rep)
+                pool.submit(lambda ph=photo: asyncio.run(client.analyse(ph, contexts[ph.name]))): (
+                    photo,
+                    rep,
+                )
                 for photo, rep in jobs
             }
             for done, fut in enumerate(as_completed(futures), start=1):

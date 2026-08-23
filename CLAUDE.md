@@ -10,20 +10,22 @@ honour.
 
 | File | What it settles |
 |---|---|
-| `umai-project-plan.md` | Product design. §3 calibration, §4 estimation pipeline, §6.3 data model, §7 roadmap. |
-| `technical-implementation.md` | Stack, repo layout, dev loop, testing strategy, Mac→Pi deploy, gotchas. |
-| `progress.md` | One-page done / in-progress / todo, kept current. |
+| `docs/umai-project-plan.md` | Product design. §3 calibration, §4 estimation pipeline, §6.3 data model, §7 roadmap. |
+| `docs/technical-implementation.md` | Stack, repo layout, dev loop, testing strategy, Mac→Pi deploy, gotchas. |
+| `docs/progress.md` | One-page done / in-progress / todo, kept current. |
 | `src/umai/config/models.py` | Model tiers, per-task routing, capability quirks. |
-| `papers/README.md` | The 29-paper evidence base, indexed by the design decision each supports. |
+| `docs/papers/README.md` | The 29-paper evidence base, indexed by the design decision each supports. |
 | `sql/README.md` | Ready-made inspection queries, mounted into pgAdmin at `/sql`. |
 
-`umai-project-plan.md` references a companion `model-selection.md`, and `papers/README.md`
-references `papers/fetch.py`; neither exists. `papers/Insights.md` is empty.
+`docs/umai-project-plan.md` references a companion `model-selection.md`, and
+`docs/papers/README.md` references `papers/fetch.py`; neither exists.
+`docs/papers/Insights.md` is empty. `docs/papers/` is gitignored (licensed PDFs, 23MB) —
+the ignore rule is unanchored so moving the directory cannot make them committable.
 
 ## Current state (2026-08-22)
 
-Built, lint/mypy clean, 200 tests green (unit + Postgres integration): clock, settings, full
-schema + two migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
+Built, lint/mypy clean, 206 tests green (unit + Postgres integration): clock, settings, full
+schema + three migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
 stage-3 compute, four food importers, trend/EWMA, safety rails, calibration, correlations,
 health ingest, `tools/simulate.py`, **and the bot stack**: `core/tools.py` (write/read paths),
 `core/agent.py`, `telegram/` (aiogram 3.30, allowlist middleware, polling), `web/api.py` (health
@@ -76,7 +78,8 @@ into it — the plan's standing rule is that activity never adds calories back t
 multiplier, so feeding `activity_offset_kcal` in as well counts the same activity twice. Retire
 one of the two.
 
-Not yet written: Mini App frontend, `tools/benchmark_perception.py`.
+Not yet written: Mini App frontend, `tools/benchmark_perception.py` (the docstring-only stub
+was removed — an empty file that claims to be a tool is worse than an absent one).
 Analytics beyond the static Phase 1 target is deliberately deferred until real history exists
 (deployment target is the Pi; calibration needs weeks of data first).
 
@@ -179,6 +182,14 @@ yield decision is made there, once, where both states are known.
 
 **The allowlist runs before any handler.** `telegram/app.py` middleware; unknown senders are
 ignored silently.
+
+**Handler include order is load-bearing.** `telegram/handlers/` is one module per feature, each
+owning a `Router`, composed in `handlers/__init__.py`. aiogram offers an update to routers in
+registration order and stops at the first match, so the order there is not alphabetical and may
+not be sorted: `menu` before `text` (a button tap must never cost a model call), `recipes` and
+`confirm` before `text` (both own an FSM state that consumes a plain message), and `text` last
+because it is the catch-all — anything after it is unreachable. Shared helpers live in
+`handlers/common.py`; a helper with one caller stays in that caller's module.
 
 ## Model configuration
 

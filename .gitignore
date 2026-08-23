@@ -1,5 +1,7 @@
-# research PDFs: large, and mostly publisher-licensed
-/papers
+# research PDFs: large, and mostly publisher-licensed. Unanchored: the
+# directory has lived at the repo root and under docs/, and 23MB of
+# licensed PDFs must not become committable by being moved.
+papers/
 
 # secrets. .env.example is the committed template.
 .env

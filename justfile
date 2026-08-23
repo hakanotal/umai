@@ -53,7 +53,7 @@ dev: db
     uv run python -m umai
 
 # The app in a container on the Mac, against the dev DB (verify-before-the-Pi
-# from technical-implementation.md section 11). Needs `just db` running.
+# from docs/technical-implementation.md section 11). Needs `just db` running.
 docker-app: db
     docker compose -f docker-compose.app.yml up -d --build
 
@@ -111,7 +111,7 @@ types:
 
 check: lint types test
 
-# The wall-clock ban from technical-implementation.md section 8.
+# The wall-clock ban from docs/technical-implementation.md section 8.
 check-clock:
     @! grep -rn "datetime.now\|utcnow" src/umai --include="*.py" \
         | grep -v "src/umai/clock.py" \

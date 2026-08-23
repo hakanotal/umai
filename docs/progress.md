@@ -21,7 +21,13 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Dinnerware calibration** (`/dinnerware`): measured once with a bank card beside the plate, stored per-user, injected into every photo prompt as the primary scale reference. CRUD via `/dinnerware name: description` with inline remove buttons.
 - **Recipe creation** (`/recipe`): schema, resolver tier, and compute path all existed; now wired to chat. Name the recipe, add ingredients one per message, optional cooked weight for yield factor, per-100g profile computed and stored.
 - **Food library one-tap** (`/library`): surfaces the user's most frequent foods with typical portions for one-tap re-logging.
-- **200 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
+- **206 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
+- **Repo cleanup**: integration tests moved out of `tests/fixtures/integration/` to
+  `tests/integration/` where every doc already said they were; docs collected under `docs/`;
+  empty stub packages (`core/prompts/`, `tests/sim/`) and the docstring-only
+  `tools/benchmark_perception.py` removed; `telegram/handlers/` split from one 1,154-line
+  module into one router per feature with the include order documented as load-bearing;
+  the `papers/` ignore rule unanchored so 23MB of licensed PDFs cannot be committed by a move.
 
 ## In progress
 
@@ -38,7 +44,8 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Phase 3 analytics wiring** — trend EWMA, calibration, adaptive targets, coaching, check-ins; parked until weeks of history exist.
 - **Mini App frontend, weekly review, correlations UI, export, cost reporting** — Phase 4.
 - **Pi deploy** when stable (same image, `UMAI_ENV=prod`, webhook + Tailscale); then backups.
-- **Stubs**: `tools/replay_health.py`, `tools/benchmark_perception.py`.
+- **Stubs**: `tools/replay_health.py`. (`tools/benchmark_perception.py` was a
+  docstring-only file and has been removed; it is listed under todo instead.)
 
 
 ---
@@ -111,3 +118,63 @@ local-day boundary — food totals, `/summary`, the evening summary, and now ste
 `settings.tz` (Europe/Istanbul). The two disagree by seven hours. Nothing in the
 step code assumes either; it reads `user.tz`. But the stored value needs to be
 whichever is actually right before any of these numbers mean anything.
+
+---
+
+## Timezone made single-source, and steps in /week (2026-08-23)
+
+**A live bug, found by inspection.** The container was running on
+`Europe/Istanbul` while `.local.env` said `America/New_York`, so the evening
+summary was scheduled for 14:30 local. Cause: a compose `environment:` entry
+overrides `env_file:`, and `${TZ:-Europe/Istanbul}` interpolates from the
+*shell* (unset), not from the env file — so a hardcoded fallback silently beat
+the configured value.
+
+Four static timezones removed:
+
+  * both compose files — the `TZ:` override is gone entirely, so `env_file` is
+    the single source and cannot be shadowed;
+  * `config/settings.py` — no default city. This was exactly the
+    "plausible-looking wrong default" the person fields three lines below
+    refuse to have: it seeds every user row and every day boundary and looks
+    right until a day lands on the wrong date. `check_startup()` now refuses to
+    boot without `TZ`, and a validator rejects a name the tz database does not
+    know, at load rather than inside a handler hours later;
+  * `db/models.py` — `User.tz` had the same hardcoded default;
+  * `scheduler/jobs.py` — the real inconsistency. The job's *contents* were
+    computed in `user.tz` while its *firing time* used `settings.tz`. New
+    `scheduling_tz()` reads the user row, falls back to config only before a
+    user exists, and warns when the two disagree.
+
+Verified in the rebuilt container: settings, user row and cron all read
+`America/New_York`; next fire 21:30-04:00. Six regression tests in
+`tests/unit/test_settings.py`, including one asserting there is no default city.
+
+**No data migration was needed, and that is worth recording.** Every timestamp
+column is `timestamp with time zone`, so stored values are absolute instants;
+the zone only decides how they are bucketed at read time. Changing it changes
+interpretation, never stored truth.
+
+**Data actually repaired** (dump taken first):
+
+  * The zero-gram phantom item on the lahmacun entry — the user had corrected it
+    to 0g, which means "not mine", and the fixed correction path now drops such
+    an item. Positions renumbered contiguously.
+  * One `media` row linked to the entry it produced, where `created_at` matched
+    `logged_at` to the millisecond. The other three unlinked media have no
+    surviving entry and were left alone rather than guessed at.
+
+Two items on that meal stay unmatched on purpose: their *names* are captions
+from the old perception schema ("fresh parsley / cilantro (garnish on
+flatbread)"), the enrichment job has correctly used all three attempts on them,
+and rewriting a `detected_name` would falsify the perception record for about
+12 kcal of garnish. New photos cannot produce such names.
+
+**Steps in `/week`.** Listed per day beside intake — never netted against it,
+per the standing rule that activity does not add calories back — with a total
+and a per-day average over *the days the phone reported*, not over seven, since
+dividing by a day that never synced would report a fall in activity that did
+not happen. A day with steps but no food is still listed: a gap in logging is
+not a gap in living. `/summary` already carried the line.
+
+Real output: six days of backfill, 21,956 steps, 3,659/day.

@@ -1,7 +1,7 @@
 # The app in a container, on the Mac, against the dev database.
 #
 # This is the "run the production image locally" step from
-# technical-implementation.md section 11: it catches the whole class of
+# docs/technical-implementation.md section 11: it catches the whole class of
 # "works on the host, fails in the container" problems while the logs are still
 # on your screen, before anything reaches the Pi.
 #
@@ -25,9 +25,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://umai:dev@host.docker.internal:5433/umai
       UMAI_HTTP_HOST: 0.0.0.0
-      # The scheduler's cron reads this; unset, the container is UTC and the
-      # 21:30 summary fires at 00:30 local.
-      TZ: ${TZ:-Europe/Istanbul}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Loopback. To let the phone reach the ingest endpoint over Tailscale,

@@ -57,7 +57,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
 "src/umai/clock.py" = ["DTZ005"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-# see technical-implementation.md section 8. everything takes a Clock.
+# see docs/technical-implementation.md section 8. everything takes a Clock.
 "datetime.datetime.now".msg = "Use a Clock (src/umai/clock.py), never the wall clock directly."
 "datetime.datetime.utcnow".msg = "Use a Clock (src/umai/clock.py), never the wall clock directly."
 
@@ -92,5 +92,4 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: needs a real Postgres via testcontainers",
-    "sim: synthetic-history simulation, no network",
 ]
