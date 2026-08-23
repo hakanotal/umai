@@ -54,17 +54,19 @@ def test_edit_keyboards_callback_data_fits_telegrams_64_bytes():
             assert len(data.encode()) <= 64, data
 
 
-def test_main_menu_labels_are_the_ones_the_menu_handler_matches():
-    """The reply keyboard sends its label as text; the menu handler matches
-    that exact text before anything reaches the intent classifier. A label
-    edited here without the handler following makes the button fall through
-    to the model as free text."""
+def test_main_menu_labels_are_all_handled():
+    """The reply keyboard sends its label as text; each label must be matched
+    by exact text before the intent classifier sees it. Some are in
+    MENU_LABELS (menu.py), Library has a text filter on its own router,
+    and Configure shows an inline keyboard."""
     from umai.telegram.handlers import MENU_LABELS
 
     labels = {
         *(b.text for row in keyboards.main_menu().keyboard for b in row),
     }
-    assert labels == MENU_LABELS
+    # Library is handled by its own router's text filter.
+    own_router_labels = {keyboards.BTN_LIBRARY}
+    assert labels == MENU_LABELS | own_router_labels
 
 
 def test_edit_list_labels_meals_and_water_differently():
@@ -88,7 +90,9 @@ def test_emoji_vocabulary_is_consistent():
     """One 💧 everywhere, not 💧 here and 🥤 there. This is the closest thing
     to a colour theme a Telegram bot has."""
     assert keyboards.WATER_250.startswith(keyboards.WATER)
-    assert keyboards.WATER_500.startswith(keyboards.WATER)
     assert keyboards.BTN_TODAY.startswith(keyboards.CHART)
+    assert keyboards.BTN_WEEK.startswith(keyboards.CALENDAR)
     assert keyboards.BTN_EDIT.startswith(keyboards.PENCIL)
     assert keyboards.BTN_WEIGH.startswith(keyboards.SCALE)
+    assert keyboards.BTN_LIBRARY.startswith(keyboards.BOOK)
+    assert keyboards.BTN_CONFIGURE.startswith(keyboards.GEAR)

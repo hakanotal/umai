@@ -24,8 +24,8 @@ the ignore rule is unanchored so moving the directory cannot make them committab
 
 ## Current state (2026-08-22)
 
-Built, lint/mypy clean, 206 tests green (unit + Postgres integration): clock, settings, full
-schema + three migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
+Built, lint/mypy clean, 212 tests green (unit + Postgres integration): clock, settings, full
+schema + four migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
 stage-3 compute, four food importers, trend/EWMA, safety rails, calibration, correlations,
 health ingest, `tools/simulate.py`, **and the bot stack**: `core/tools.py` (write/read paths),
 `core/agent.py`, `telegram/` (aiogram 3.30, allowlist middleware, polling), `web/api.py` (health
@@ -49,10 +49,10 @@ the text classifier and the enrichment job. A model reading a plate cold writes
 this person eats Turkish food it writes "lahmacun", which is a lookup key. Max 6,
 order-normalised on write so the prompt fingerprint stays stable.
 
-**Perception is validated** (build-order step 1): all 24 `data/media` photos ran through the
+**Perception is validated** (build-order step 1): all 24 `eval/photos` photos ran through the
 real path — identification excellent (Turkish dishes named), zero parse failures, zero
 discarded nutrition; within-photo variance on a 5×3 subset: mean CV 0.07, worst 0.11 (gate is
-0.20, see eval/README). The photo-first design holds.
+~0.25, see `eval/README.md`). The photo-first design holds.
 
 **Reasoning models, the empty-response trap:** all three configured models are reasoning
 models on OpenRouter. Without `reasoning: {"effort": "low"}` in extra_body they exhaust
@@ -66,6 +66,13 @@ hand-transcribed Foundation rows so the resolver works before a real USDA key ar
 (DEMO_KEY is throttled to uselessness; free key: https://fdc.nal.usda.gov/api-key-signup.html,
 then `--source usda`).
 
+**FNDDS** (`core/fndds.py`, `tools/seed_fndds.py`, `just extract-fndds`): the USDA
+Food and Nutrient Database for Dietary Studies, seeded from a CSV bundle into
+`fndds_foods`, exposed to the enrichment model as the `fndds_search` tool
+(`core/enrichment.py:205`). Not in the synchronous resolver path — `resolver/match.py`
+never imports it — so it only populates `foods` after the fact. If `fndds_foods` was
+never seeded, `fndds_search` returns nothing silently.
+
 **Steps** land via Health Auto Export over `tailscale serve` (never by widening the container's
 loopback bind) and are read per *local* day by `tools.daily_steps` / `tools.steps_by_day`,
 aggregated on the fly rather than materialised into `daily_rollups`, which stays unwritten.
@@ -75,8 +82,10 @@ None as "assume a typical 8,000-step day" and a real zero as about -350 kcal, so
 failed to sync must never be reported as zero. Steps are shown beside the target and never folded
 into it — the plan's standing rule is that activity never adds calories back to the budget.
 **Trap for whoever wires steps into calibration:** `current_target` already applies a 1.4 activity
-multiplier, so feeding `activity_offset_kcal` in as well counts the same activity twice. Retire
-one of the two.
+multiplier (`core/tools.py:1091` bare literal), so feeding `activity_offset_kcal` in as well
+counts the same activity twice. Retire one of the two. A second `SEDENTARY_MULTIPLIER = 1.4`
+sits defined at `analytics/calibration.py:89` and is never imported — two constants, one dead
+and one a literal, is the concrete shape the trap will take.
 
 Not yet written: Mini App frontend, `tools/benchmark_perception.py` (the docstring-only stub
 was removed — an empty file that claims to be a tool is worse than an absent one).
@@ -119,12 +128,12 @@ just migrate            # alembic upgrade head
 just dev                # the bot: long polling + ingest endpoint, hot reload
 just check              # lint + types + test
 just t tests/unit/test_compute.py::test_boiled_rice_is_not_raw_rice   # a single test
-just record tests/integration/test_perception.py                      # RECORD=1, real paid calls
 just check-clock        # enforces the wall-clock ban outside clock.py
 just preflight          # live pricing + model capability drift check
 just eval MODEL         # the twenty-photo baseline harness
 just sim 90 2400 0.78   # plant a known TDEE and bias, check the engine recovers them
 just seed               # starter foods into the dev DB
+just extract-fndds      # reduce FNDDS CSV bundle into the foods table
 just perceive           # the 24-photo perception run (real API, ~$0.08)
 ```
 
@@ -205,6 +214,8 @@ before trusting it.
 - Nothing calls `datetime.now()` outside `clock.py`; everything takes a `Clock`. Build
   `tools/simulate.py` targets *before* the analytics they test.
 - Tests never hit a model API: cassettes recorded with `RECORD=1`, committed, replayed offline.
+  Zero cassettes exist today; the fixture (`tests/conftest.py:41`) calls `pytest.skip` on a
+  missing cassette rather than failing, so the convention is intended but not yet in force.
 - Real Postgres in tests, never SQLite (trigram, native enums, arrays, ON CONFLICT).
 - The conftest engine is function-scoped on purpose: pytest-asyncio gives each test its own
   event loop, and asyncpg connections cannot cross loops. Schema creation is session-scoped via
@@ -213,8 +224,7 @@ before trusting it.
 - Health ingest is idempotent (natural-key upsert, `xmax` distinguishes insert from update) and
   backfill-tolerant. Payloads must be deduped before `ON CONFLICT` — Postgres cannot update one
   row twice in a statement.
-- Phase 1 uses `pg_trgm`, not pgvector. Vector columns, when added, are **512** (CLIP ViT-B/32),
-  correcting the `vector(768)` in plan §6.3.
+- Phase 1 uses `pg_trgm`, not pgvector. Vector columns, when added, are **512** (CLIP ViT-B/32).
 - `food_items.position` preserves display order; fix-buttons address items by it.
 - Macro columns on `food_items` are a **cache**: the enrichment backfill rewrites them
   in place from `food_id` + grams without touching entries. That is not a breach of

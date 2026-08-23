@@ -27,10 +27,11 @@ log = logging.getLogger(__name__)
 
 
 class Awaiting(StatesGroup):
-    """The chat is waiting for one number: grams, a weigh-in, new ml, or a
-    recipe ingredient."""
+    """The chat is waiting for one number: grams, a weigh-in, new ml, a
+    recipe name, or a recipe ingredient."""
 
     number = State()
+    recipe_name = State()
     recipe_ingredients = State()
 
 

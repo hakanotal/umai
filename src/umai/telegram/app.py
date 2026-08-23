@@ -32,6 +32,9 @@ COMMANDS = [
     BotCommand(command="summary", description="today's totals"),
     BotCommand(command="week", description="the last seven days"),
     BotCommand(command="edit", description="fix or remove today's entries"),
+    BotCommand(command="library", description="frequent foods, one-tap log"),
+    BotCommand(command="dinnerware", description="plate sizes for portion estimates"),
+    BotCommand(command="recipe", description="save a dish you cook often"),
     BotCommand(command="cuisines", description="what you usually eat"),
 ]
 

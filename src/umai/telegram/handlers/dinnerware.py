@@ -66,6 +66,11 @@ async def dinnerware_command(message: Message, settings: Settings, clock: Clock)
         return
 
     # View mode
+    await show_dinnerware_message(message, settings, clock)
+
+
+async def show_dinnerware_message(message: Message, settings: Settings, clock: Clock) -> None:
+    """Show the dinnerware list, used by both the command and the configure callback."""
     async with session_scope() as session:
         user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
         items = await tools.list_dinnerware(session, user.id)
@@ -73,6 +78,25 @@ async def dinnerware_command(message: Message, settings: Settings, clock: Clock)
         await message.answer(_DINNERWARE_BLURB)
         return
     await message.answer(
+        _dinnerware_list_text(items),
+        reply_markup=keyboards.dinnerware_list(items),
+    )
+
+
+async def show_dinnerware(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+    """Show the dinnerware list from a callback query (configure menu)."""
+    async with session_scope() as session:
+        user = await tools.get_or_create_user(
+            session,
+            settings,
+            callback.from_user.id,
+            clock=clock,  # type: ignore[union-attr]
+        )
+        items = await tools.list_dinnerware(session, user.id)
+    if not items:
+        await callback.message.answer(_DINNERWARE_BLURB)  # type: ignore[union-attr]
+        return
+    await callback.message.answer(  # type: ignore[union-attr]
         _dinnerware_list_text(items),
         reply_markup=keyboards.dinnerware_list(items),
     )

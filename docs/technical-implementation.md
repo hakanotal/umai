@@ -61,7 +61,7 @@ lockfile. On a Pi, where every install is slow, that difference is felt rather t
 | ORM | SQLAlchemy 2.0 (async) | Typed, mature. Alembic for migrations is the real reason. |
 | Migrations | Alembic | Non-negotiable once real data exists on the Pi. |
 | Database | Postgres 17 + pgvector 0.8.x | Official `pgvector/pgvector:pg17` image. See section 9 on whether you need vectors at all in Phase 1. |
-| Scheduler | APScheduler with a Postgres jobstore | Survives restarts, which cron in a container does not. Jobs are code, so they are testable. |
+| Scheduler | APScheduler (MemoryJobStore) | Jobs do not survive restarts — a known gap. Code-as-job makes them testable; a Postgres jobstore is the obvious fix when restart resilience matters. |
 | Model calls | `openai` SDK against OpenRouter | OpenRouter is OpenAI-compatible. One SDK, `base_url` swapped. Already written in `config/models.py`. |
 | Validation | Pydantic v2 | The stage 1 schema is a Pydantic model, and `model_json_schema()` feeds it straight to the API. One definition, no drift. |
 | Charts | Matplotlib, Agg backend | Headless PNG rendering into Telegram. Boring and reliable. |
@@ -69,7 +69,7 @@ lockfile. On a Pi, where every install is slow, that difference is felt rather t
 | Logging | structlog | JSON in prod, readable in dev. |
 | Tests | pytest, pytest-asyncio, testcontainers | Real Postgres in tests, not SQLite. Vector and trigram behaviour do not exist in SQLite. |
 | Lint and format | ruff | Replaces black, isort, flake8. One tool, one config. |
-| Types | mypy, strict on `analytics/` and `resolver/` | Full strict everywhere is not worth it. Those two modules are where a silent type error becomes a wrong calorie target. |
+| Types | mypy, strict on `analytics/`, `resolver/`, `core.*`, `telegram.*` | Full strict everywhere is not worth it. These modules are where a silent type error becomes a wrong calorie target. |
 
 ---
 
@@ -98,12 +98,14 @@ umai/
 │   │   ├── models.py              # already written
 │   │   └── settings.py            # Pydantic Settings, env-driven
 │   ├── clock.py                   # the time abstraction. read section 8.
+│   ├── theme.py                   # brand palette from the logo
 │   ├── db/
 │   │   ├── models.py              # SQLAlchemy tables from plan section 6.3
 │   │   └── session.py
 │   ├── perception/
 │   │   ├── schema.py              # Pydantic stage 1 schema
 │   │   ├── prompt.py              # dinnerware, priors, library candidates
+│   │   ├── images.py              # resize, base64 encoding
 │   │   └── client.py              # the vision call
 │   ├── resolver/
 │   │   ├── match.py               # recipe, library, foods lookup
@@ -129,13 +131,17 @@ umai/
 │   │   ├── trend.py               # EWMA
 │   │   ├── calibration.py         # the k factor fit
 │   │   ├── correlations.py        # statistics, with thresholds
+│   │   ├── safety.py              # BMR floors, max loss rate
 │   │   └── charts.py
 │   ├── scheduler/
 │   │   └── jobs.py
 │   └── web/
 │       ├── api.py                 # Mini App backend
 │       └── static/
+├── __main__.py                    # entry point, scheduler, bot startup
+├── .dockerignore
 ├── tests/
+│   ├── conftest.py                # cassette fixture, db fixtures
 │   ├── cassettes/                 # recorded model responses
 │   ├── unit/
 │   └── integration/               # needs a real Postgres
@@ -225,7 +231,7 @@ uv add --dev pytest pytest-asyncio testcontainers ruff mypy
 
 docker compose -f docker-compose.dev.yml up -d      # Postgres + pgAdmin
 uv run alembic upgrade head                          # schema
-uv run python tools/seed_foods.py --source usda --top 200
+uv run python tools/seed_foods.py --source usda
 just dev                                             # bot + api, hot reload
 ```
 
@@ -343,7 +349,7 @@ across devices when you read an aggregate; a per-source breakdown would put two 
 
 ```bash
 uv run python tools/replay_health.py --record   # saves the next payload to fixtures/
-uv run python tools/replay_health.py --replay tests/fixtures/health_2026-08-22.json
+uv run python tools/replay_health.py --replay <fixture.json>
 ```
 
 After that, developing the ingest path needs no phone at all. It also gives you the real payload
@@ -375,8 +381,8 @@ def cassette(request, monkeypatch):
 ```
 
 ```bash
-RECORD=1 uv run pytest tests/integration/test_perception.py   # refresh cassettes
-uv run pytest                                                  # normal, offline, free
+RECORD=1 uv run pytest tests/unit/test_caption.py   # refresh cassettes
+uv run pytest                                        # normal, offline, free
 ```
 
 Commit the cassettes. They double as a regression suite: when you re-record after a model or
@@ -479,12 +485,11 @@ you actually need image similarity. Keep the `pgvector/pgvector` image from day 
 extension is available the moment you want it, but do not put an embedding model on the Phase 1
 critical path.
 
-**A correction to the plan's schema when you do add it.** The data model in section 6.3 specifies
-`vector(768)`. That dimension has to match whatever model you choose, and the natural choice here
-is CLIP ViT-B/32, which emits **512**. Its real advantage is that image and text land in the same
-space, so "find photos that look like lentil soup" works from a text query, which is exactly what
-the resolver wants. Use `vector(512)`, and fix the number before the first migration rather than
-after, because changing a vector column's dimension later means a rebuild.
+**Vector dimension.** The natural embedding model is CLIP ViT-B/32, which emits **512**-dimensional
+vectors. Its real advantage is that image and text land in the same space, so "find photos that
+look like lentil soup" works from a text query, which is exactly what the resolver wants. Use
+`vector(512)`, and fix the number before the first migration rather than after, because changing
+a vector column's dimension later means a rebuild.
 
 CLIP ViT-B/32 runs comfortably on the Mac via MPS and takes roughly a second per image on a Pi 5
 CPU. Embedding happens in a background job after logging, so that latency is invisible.
@@ -625,23 +630,28 @@ diagram suggests.
 
 **Step 1. The perception call, standalone.** No database, no bot. A script that takes a photo path
 and prints items, state and grams. Run the twenty-photo eval through it. This validates the single
-riskiest assumption in the project before anything is built on top of it.
+riskiest assumption in the project before anything is built on top of it. *Done except the eval
+half: variance measured (CV 0.07), bias never measured — `eval/truth.csv` holds 3 rows.*
 
 **Step 2. Schema and the food table.** Alembic migrations, `pg_trgm`, USDA import, hand-seed the
 TurKomp subset. Verify that your twenty most common foods each resolve to a tier 1 or 2 row.
+*Partial: USDA and TurKomp not imported; FNDDS seeded as a substitute (`just extract-fndds`),
+undocumented until this pass.*
 
 **Step 3. Resolve and compute.** Wire stages 2 and 3. Feed step 1's output through them and get
 real macros out. Unit test the arithmetic exhaustively. At this point the estimation pipeline is
-complete and testable with no Telegram involved at all.
+complete and testable with no Telegram involved at all. *Done.*
 
 **Step 4. The bot.** Long polling, photo handler, text handler, buttons. This is when it starts
-feeling like a product.
+feeling like a product. *Done.*
 
 **Step 5. Ingest and scheduling.** Health endpoint over Tailscale, record a fixture, daily summary
-job.
+job. *Endpoint written, idempotent, tested — no real payload has ever arrived (blocked on
+Tailscale + paid REST export).*
 
 **Step 6. The simulator, then calibration.** Build the generator and simulator *before* the
 calibration engine, so you can develop the engine against a target instead of against a guess.
+*Done but unwired: `CalibrationState` and `TrendWeight` tables migrated, never read or written.*
 
 Steps 1 through 4 are the Phase 1 gate from the project plan. If using it for three weeks is not
 pleasant, stop and fix that before touching calibration.
@@ -651,22 +661,53 @@ pleasant, stop and fix that before touching calibration.
 ## 14. `.env.example`
 
 ```bash
-UMAI_ENV=dev
+UMAI_ENV=dev                     # dev | prod
 
+# --- Telegram --------------------------------------------------------------
+# Two bots, two tokens. Telegram allows one consumer per token, so a dev
+# instance polling the production token steals messages from the real bot.
 TELEGRAM_BOT_TOKEN=              # umai_dev_bot in dev, umai_bot in prod
-TELEGRAM_ALLOWED_USER_IDS=       # your numeric id. single-user lockout.
-TELEGRAM_WEBHOOK_URL=            # prod only
+TELEGRAM_ALLOWED_USER_IDS=       # your numeric id. single-user lockout
+TELEGRAM_WEBHOOK_URL=            # prod only. dev uses long polling.
 TELEGRAM_WEBHOOK_SECRET=         # prod only
 
+# --- Models ----------------------------------------------------------------
 OPENROUTER_API_KEY=
+UMAI_PROVIDER=openrouter         # read by nothing — dead template variable
 
+# --- Database --------------------------------------------------------------
 DATABASE_URL=postgresql+asyncpg://umai:dev@localhost:5433/umai
+POSTGRES_PASSWORD=               # prod only, consumed by docker-compose.yml
 
+# --- Ingest ----------------------------------------------------------------
 HEALTH_INGEST_TOKEN=             # bearer token for Health Auto Export
 MEDIA_DIR=./data/media
+UMAI_HTTP_HOST=127.0.0.1         # containers override to 0.0.0.0 in compose
 
-TZ=Europe/Istanbul               # display only. storage is UTC.
+# --- Deploy ----------------------------------------------------------------
+UMAI_PI_HOST=pi                  # ssh host or tailnet name
+UMAI_IMAGE=ghcr.io/OWNER/umai:latest
+
+# --- The person ------------------------------------------------------------
+# No defaults on purpose. BMR, the safety floors and the initial expenditure
+# estimate are seeded from these, and a plausible-looking wrong default is
+# worse than a startup failure. Targets refuse to compute until they are set.
+UMAI_SEX=                        # male | female  (startup-fatal)
+UMAI_HEIGHT_CM=                  # startup-fatal
+UMAI_BIRTH_DATE=                 # YYYY-MM-DD  (startup-fatal)
+UMAI_GOAL_RATE_KG_PER_WEEK=-0.5  # negative to lose; capped at 1% body weight/wk
+UMAI_START_WEIGHT_KG=            # seeds the weight series at onboarding
+
+UMAI_CUISINES=turkish            # comma-separated cuisine slugs from core/cuisines.py
+
+# --- Locale ----------------------------------------------------------------
+# Load-bearing, not display-only: the scheduler's cron trigger reads this to
+# decide when "21:30 local" is. Unset in a container, the process is UTC and
+# the evening summary arrives at half past midnight. Storage is UTC, always.
+TZ=Europe/Istanbul
 ```
+
+`UMAI_SEX`, `UMAI_HEIGHT_CM`, and `UMAI_BIRTH_DATE` are startup-fatal: `settings.require_person()` (`settings.py:123`) raises `RuntimeError` if any is unset, and anything that computes a target calls it first (`core/tools.py:1073`). `UMAI_PROVIDER` is read by nothing — a dead template variable that can be removed.
 
 `TELEGRAM_ALLOWED_USER_IDS` from the first commit. A Telegram bot is discoverable by anyone who
 guesses the username, and this is a health assistant with your data in it. One allowlist check in

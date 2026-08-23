@@ -16,7 +16,8 @@
 | Eating pattern | Roughly half home-cooked, half out | Recipe engine moves into Phase 2, not Phase 3. Restaurant pre-commitment matters. |
 | Model API | OpenRouter, cheapest workable | `qwen/qwen3.8-27b` perception, `qwen/qwen3.7-flash` utility, `z-ai/glm-5.3` coach. About $1.36 a month. |
 
-**Companion documents:** `model-selection.md` (model tiers, pricing, `config/models.py`),
+**Companion documents:** `model-selection.md` (model tiers, pricing, `config/models.py` —
+this file does not exist; `config/models.py` is the current source of truth),
 `technical-implementation.md` (local development on the Mac, stack, testing, deploy to the Pi),
 `eval/` (the twenty-photo baseline harness).
 

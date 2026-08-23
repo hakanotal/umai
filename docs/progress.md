@@ -4,11 +4,12 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 
 ## Done
 
-- **Perception validated** (build-order step 1): all 24 `data/media` photos through the real path, zero parse failures, within-photo variance mean CV 0.07 (gate 0.20). Bias measurement still lacks ground truth (see Todo).
-- **Full schema + three migrations**, Postgres 17 + pg_trgm, `alembic` one-shot migrations, pgAdmin on :5050 with the `sql/` queries mounted.
+- **Perception validated** (build-order step 1): all 24 `eval/photos` photos through the real path, zero parse failures, within-photo variance mean CV 0.07 (gate ~0.25, see `eval/README.md`). Bias measurement still lacks ground truth (see Todo).
+- **Full schema + four migrations**, Postgres 17 + pg_trgm, `alembic` one-shot migrations, pgAdmin on :5050 with the `sql/` queries mounted.
 - **Four-stage logging pipeline**: photo → vision (name/state/grams only) → resolver (recipe → library → canonical → provisional) → pure-code arithmetic → one confirmation with per-item gram fixes.
 - **Food table**: 46 hand-transcribed USDA Foundation starter rows (Turkish aliases included); four importers (USDA, TurKomp, OpenFoodFacts, label-photo).
 - **Self-filling food table** (`core/enrichment.py`): background job researches unmatched names on the coach tier, gated in code by Atwater validation, writes tier-4 rows, backfills waiting items. Verified live (lahmacun 573 kcal where the first session reported 10).
+- **FNDDS** (`core/fndds.py`, `tools/seed_fndds.py`, `just extract-fndds`): the USDA Food and Nutrient Database for Dietary Studies, seeded from a CSV bundle into `fndds_foods`, exposed to the enrichment model as the `fndds_search` tool (`core/enrichment.py:205`). Not in the synchronous resolver path; only populates `foods` after the fact.
 - **Cuisines as perception context** (`/cuisines`, `users.cuisines`): max 6, order-normalised, reaching the vision prompt, the text classifier and the enrichment job.
 - **Personal learning layer**: `food_library` and `portion_priors` written after every meal and read by the resolver and the perception prompt; corrections feed the priors.
 - **Bot stack live** (`@umai_diet_bot`): text logging (EN/TR), bare-number weigh-ins, photo path with download retry, no transaction held across model calls, allowlist middleware on `dp.update`, evening summary at 21:30 local, enrichment sweep every 20 min, health ingest endpoint (idempotent, bearer auth), webhook + initData HMAC verify for the future Mini App.
@@ -16,12 +17,12 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Calibration engine + simulator**: k/TDEE fit, `reported_intake_target()` as the supported output (k and TDEE individually unidentifiable, documented), safety floors in code. Simulator-tested, deliberately not yet connected to the bot.
 - **Correlations module**: pre-declared pairings, Holm correction, 50-seed noise property test.
 - **First Docker session audit**: every finding fixed (A1–A6, B1–B8, C1–C6, D1–D9, E1–E4; D10 deliberately unchanged, documented).
-- **UI/UX overhaul**: persistent reply keyboard (💧 250/500 ml, 📊 Today, ✏️ Edit today, ⚖️ Weigh in) matched before the intent classifier so button taps never cost a model call; `/help`, `/edit`, `/dinnerware`, `/recipe`, `/library` commands; edit/remove flow for today's entries — per-item gram fixes, whole-meal removal with confirm, water amount edit — with the photo archive and supersede-chain invariants protected; brand palette sampled from the logo (`src/umai/theme.py`) applied to the charts; copy pass (plain language, no em dashes).
+- **UI/UX overhaul**: persistent reply keyboard (💧 250 ml, 📊 Today, 📊 Week, ✏️ Edit, 📚 Library, 🍽️ Dinnerware, ⚖️ Weigh in, 📝 Recipe, 🌍 Cuisines) — every feature reachable without typing; button taps matched before the intent classifier so they never cost a model call; `/help`, `/edit`, `/dinnerware`, `/recipe`, `/library` commands; edit/remove flow for today's entries — per-item gram fixes, whole-meal removal with confirm, water amount edit — with the photo archive and supersede-chain invariants protected; brand palette sampled from the logo (`src/umai/theme.py`) applied to the charts; copy pass (plain language, no em dashes).
 - **Photo caption as context**: when a user sends a photo with a caption (e.g. "lahmacun"), the caption is injected into the vision prompt via `PromptContext.note` and into the resolver's tiebreak LLM message as advisory context.
 - **Dinnerware calibration** (`/dinnerware`): measured once with a bank card beside the plate, stored per-user, injected into every photo prompt as the primary scale reference. CRUD via `/dinnerware name: description` with inline remove buttons.
 - **Recipe creation** (`/recipe`): schema, resolver tier, and compute path all existed; now wired to chat. Name the recipe, add ingredients one per message, optional cooked weight for yield factor, per-100g profile computed and stored.
 - **Food library one-tap** (`/library`): surfaces the user's most frequent foods with typical portions for one-tap re-logging.
-- **206 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
+- **212 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
 - **Repo cleanup**: integration tests moved out of `tests/fixtures/integration/` to
   `tests/integration/` where every doc already said they were; docs collected under `docs/`;
   empty stub packages (`core/prompts/`, `tests/sim/`) and the docstring-only
@@ -36,16 +37,41 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 
 ## Todo
 
-- **Voice notes** — the largest Phase 1 gap; plan calls it the lowest-friction capture method. Needs a transcription model choice (local Whisper vs OpenRouter audio model) and audio download handling.
+### Roadmap gates
+
+The plan's §10.6 says "Then Phase 1, and use it for three weeks before writing a line of Phase 2." Phase 2 and 3 machinery was built ahead of the Phase -1/0/1 gates:
+
+- **Phase -1 (baseline eval)** — *half met.* Variance measured (mean CV 0.07). Bias never measured: `eval/photos/` holds 24 photos but `eval/truth.csv` has 3 rows copied from the README example. The plan calls this "run before any bot code"; the bot is written.
+- **Phase 0 (passive data for three days)** — *not met.* No real Health Auto Export payload has ever arrived. Blocked on Tailscale + the paid REST export.
+- **Phase 0.5 (food table)** — *partly.* 46 starter rows against the plan's 150–300; the label-photo importer (named as the cheapest way to fill every gap thereafter) is written but unwired.
+- **Phase 1 (the logging loop)** — *built except voice.* The three-week use gate has not started.
+
+### Built but not reachable
+
+A large amount of code is written, migrated, and in some cases model-routed — but nothing calls it:
+
+| Capability | State | Evidence |
+|---|---|---|
+| Label-photo import | Written, no caller | `resolver/importers/label_photo.py:65` never imported; the only `F.photo` handler (`handlers/photo.py:48`) routes unconditionally to perception. A fully configured `label_ocr` model tier (`config/models.py:100`) has no caller |
+| Barcode / OpenFoodFacts | Written, no caller | `openfoodfacts.py:83` has zero importers |
+| Calibration, trend, correlations | Written, no caller | No import from any handler, `agent.py`, `tools.py` or `jobs.py`. `CalibrationState` and `TrendWeight` tables are migrated but never read or written |
+| Mini App | Auth helper only | `verify_init_data` (`web/api.py:106`) never called; `web/static/` holds a 0-byte `.gitkeep` |
+| Voice | Not written | No `F.voice` handler, no transcription task in `TASKS`. `EntrySource.voice` is a dead enum member |
+| Scheduled jobs | 2 of 6 | `jobs.py:1` promises evening check-in, weekly review, biweekly recalibration and backups; only `evening_summary` and `enrichment_sweep` are registered |
+| Command discoverability | 9 of 10 | `app.py:29-38` publishes `start, help, summary, week, edit, library, dinnerware, recipe, cuisines`; all reachable from the reply keyboard; only `/today` is an alias for `/summary` |
+
+### Recommended next step
+
+Wire what is already written, **label-photo first**. It is the cheapest accuracy win available: the food table is at 46 rows against a 150–300 target, and label-photo is Phase 0.5's designated tool for filling every gap. The code and its `label_ocr` model tier already exist, and it needs no new dependency. Barcode follows the same path.
+
+What is deliberately *not* next: calibration wiring waits for weeks of real history **and** for the double-count (`* 1.4`) to be retired; voice is the remaining Phase 1 gap but its transcription approach is undecided; the Mini App is Phase 4.
+
+### Remaining items
+
 - **Eval ground truth** — weigh the 20 photos' items so bias (not just variance) can be measured and model changes ranked.
 - **USDA full import** — free API key (https://fdc.nal.usda.gov/api-key-signup.html), then `tools/seed_foods.py --source usda`. TurKomp CSV still to be filled (~150–300 dishes).
-- **Label-photo and barcode import reachable from chat** — both written, neither wired to a handler.
 - **Satiety / alcohol / fasting window / body measurements** — cheap to collect, unlock Phase 4 analysis.
-- **Phase 3 analytics wiring** — trend EWMA, calibration, adaptive targets, coaching, check-ins; parked until weeks of history exist.
-- **Mini App frontend, weekly review, correlations UI, export, cost reporting** — Phase 4.
 - **Pi deploy** when stable (same image, `UMAI_ENV=prod`, webhook + Tailscale); then backups.
-- **Stubs**: `tools/replay_health.py`. (`tools/benchmark_perception.py` was a
-  docstring-only file and has been removed; it is listed under todo instead.)
 
 
 ---
@@ -80,7 +106,7 @@ makes of it and exits; `--replay` feeds it through the real ingest path.
 Verified end to end against a synthetic payload: recorded, parsed, replayed,
 and the second replay wrote 0 and reported 2 duplicates.
 
-**Tests:** 206 green, up from 139. New ones cover multi-sample summation, both
+**Tests:** 212 green, up from 139. New ones cover multi-sample summation, both
 directions of the local-midnight boundary, `None` vs `0`, three-day backfill,
 cross-user and cross-metric leakage, aggregate-level idempotency, and a
 Europe/London DST transition — the only case that distinguishes a real
@@ -111,13 +137,13 @@ wide lookback re-sends are counted as duplicates rather than written twice.
 
 ### One finding that is not about steps
 
-`users.tz` in the dev database is **`America/New_York`**, not `Europe/Istanbul`.
-It was set from the process timezone when the user row was first created. Every
-local-day boundary — food totals, `/summary`, the evening summary, and now steps
-— is computed from this column, while the scheduler's cron now fires on
-`settings.tz` (Europe/Istanbul). The two disagree by seven hours. Nothing in the
-step code assumes either; it reads `user.tz`. But the stored value needs to be
-whichever is actually right before any of these numbers mean anything.
+`TZ=America/New_York` in `.local.env`; the running `umai-app-1` container has inherited it
+(`docker inspect` confirms), and `users.tz` in the dev DB is the same. Istanbul is +7.
+Every local-day boundary — food totals, `/summary`, the evening summary and steps — is
+computed from `settings.tz` (`core/tools.py:1217`), so today's numbers land on the wrong day
+and the 21:30 summary fires at 14:30 local. The code is correct; the configuration is wrong.
+Fixing `.local.env` corrects new rows; the existing `users.tz` row needs a separate update,
+and there is no in-app way to change a timezone.
 
 ---
 
