@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,9 +28,24 @@ class Settings(BaseSettings):
 
     # --- Telegram ----------------------------------------------------------
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
-    telegram_allowed_user_ids: str = Field(default="", alias="TELEGRAM_ALLOWED_USER_IDS")
     telegram_webhook_url: str = Field(default="", alias="TELEGRAM_WEBHOOK_URL")
     telegram_webhook_secret: str = Field(default="", alias="TELEGRAM_WEBHOOK_SECRET")
+
+    # --- Access ------------------------------------------------------------
+    # The phrase a stranger has to send before the bot will talk to them. This
+    # replaced an allowlist of numeric Telegram ids, which meant admitting
+    # somebody was an edit to .env and a restart.
+    #
+    # Never stored: it lives here, `tokens.phrase_matches` compares against it,
+    # and no row holds a copy. Rotating it is an edit and a restart, which is
+    # the trade for not having a table of codes to manage — and it locks out
+    # nobody who is already through, because admission is recorded on the row.
+    invite_phrase: str = Field(default="", alias="UMAI_INVITE_CODE")
+    # The one id that skips the phrase. Without it the first run of a fresh
+    # deployment has nobody who can admit anybody, including themselves.
+    bootstrap_admin_telegram_id: int | None = Field(
+        default=None, alias="UMAI_BOOTSTRAP_ADMIN_TELEGRAM_ID"
+    )
 
     # --- Models ------------------------------------------------------------
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
@@ -96,14 +111,24 @@ class Settings(BaseSettings):
             ) from exc
         return v
 
-    @field_validator("telegram_allowed_user_ids")
+    MIN_INVITE_PHRASE_LEN: ClassVar[int] = 12
+
+    @field_validator("invite_phrase")
     @classmethod
-    def _no_wildcard(cls, v: str) -> str:
-        if v.strip() in {"*", "all"}:
+    def _long_enough_to_be_secret(cls, v: str) -> str:
+        """A short phrase is not a lock.
+
+        The bot is discoverable by anyone who guesses the username, this phrase
+        is the only thing between a stranger and someone else's health data, and
+        five wrong guesses is all a person gets — so the phrase has to be worth
+        more than five guesses. Empty is allowed here and refused by
+        `check_startup`, which is where the deployment-shaped failures live.
+        """
+        phrase = v.strip()
+        if phrase and len(phrase) < cls.MIN_INVITE_PHRASE_LEN:
             raise ValueError(
-                "An allowlist of '*' defeats the point. A Telegram bot is "
-                "discoverable by anyone who guesses the username, and this one "
-                "holds your health data. List the numeric ids explicitly."
+                f"UMAI_INVITE_CODE must be at least {cls.MIN_INVITE_PHRASE_LEN} "
+                "characters. Use a few unrelated words, not a password."
             )
         return v
 
@@ -112,11 +137,6 @@ class Settings(BaseSettings):
         from umai.core.cuisines import normalise
 
         return normalise((self.cuisines or "").replace(";", ",").split(","))
-
-    @property
-    def allowed_user_ids(self) -> frozenset[int]:
-        raw = (self.telegram_allowed_user_ids or "").replace(";", ",")
-        return frozenset(int(p) for p in (x.strip() for x in raw.split(",")) if p)
 
     @property
     def use_webhook(self) -> bool:
@@ -146,9 +166,15 @@ class Settings(BaseSettings):
         problems: list[str] = []
         if not self.telegram_bot_token:
             problems.append("TELEGRAM_BOT_TOKEN is unset")
-        if not self.allowed_user_ids:
+        if not self.invite_phrase.strip():
             problems.append(
-                "TELEGRAM_ALLOWED_USER_IDS is empty: the bot would answer anyone who finds it"
+                "UMAI_INVITE_CODE is unset: the invite phrase is the only thing "
+                "between a stranger and someone else's health data"
+            )
+        if self.bootstrap_admin_telegram_id is None:
+            problems.append(
+                "UMAI_BOOTSTRAP_ADMIN_TELEGRAM_ID is unset: nobody can be admitted, "
+                "because there is no admin to do it"
             )
         if not self.openrouter_api_key:
             problems.append("OPENROUTER_API_KEY is unset: photo logging will fail")

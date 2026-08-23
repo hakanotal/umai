@@ -186,6 +186,80 @@ def delete_confirm(entry_prefix: str) -> InlineKeyboardMarkup:
     )
 
 
+# ---------------------------------------------------------------------------
+# Onboarding
+# ---------------------------------------------------------------------------
+#
+# The wizard's keyboards carry an `ob:` prefix so its callbacks cannot collide
+# with a feature router's: the two live behind opposite access filters and a
+# shared prefix would be a bug that only appears mid-wizard.
+
+
+def onboarding_sex() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Male", callback_data="ob:sex:male"),
+                InlineKeyboardButton(text="Female", callback_data="ob:sex:female"),
+            ]
+        ]
+    )
+
+
+def onboarding_goal(choices: Sequence[tuple[str, float, str]]) -> InlineKeyboardMarkup:
+    """One button per offered rate, one per row.
+
+    Buttons rather than a typed number, deliberately. People type "1.5", the
+    safety rails cap it at 1% of body weight a week, and the target they are
+    then given is not the one they asked for — with no moment at which anybody
+    said so. Offering only rates that survive the rails makes the limit visible
+    before it applies instead of silent afterwards.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=label, callback_data=f"ob:goal:{rate}")]
+            for label, rate, _kind in choices
+        ]
+    )
+
+
+def onboarding_timezones(zones: Sequence[str]) -> InlineKeyboardMarkup:
+    """Candidate zones, when a city resolves to more than one."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=zone, callback_data=f"ob:tz:{zone}")] for zone in zones
+        ]
+    )
+
+
+def onboarding_confirm_tz(zone: str) -> InlineKeyboardMarkup:
+    """Yes/no on the local time echoed back.
+
+    The one extra tap in the whole wizard, and it earns its place: a wrong
+    timezone is invisible until a day lands on the wrong date weeks later, and
+    every total the bot will ever show is computed from it. Checking a clock is
+    the only way a person can tell at the moment they answer.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=f"{CHECK} Yes", callback_data=f"ob:tzok:{zone}"),
+                InlineKeyboardButton(text="No", callback_data="ob:tzno"),
+            ]
+        ]
+    )
+
+
+def onboarding_cuisines(selected: Iterable[str]) -> InlineKeyboardMarkup:
+    """The cuisine grid again, with the wizard's own callback prefix.
+
+    Same layout, same labels; only the prefix differs, because the feature
+    router that owns `cuisine:` sits behind the active-user filter and cannot
+    be reached by someone still in the wizard.
+    """
+    return _cuisine_grid(selected, prefix="ob:cuisine", done="ob:cuisines_done")
+
+
 def cuisines(selected: Iterable[str]) -> InlineKeyboardMarkup:
     """The cuisine picker: every option, ticked ones first in the label.
 
@@ -194,16 +268,21 @@ def cuisines(selected: Iterable[str]) -> InlineKeyboardMarkup:
     editable, and a free-text field would collect typos that quietly degrade
     every photo.
     """
+    return _cuisine_grid(selected, prefix="cuisine", done="cuisine_done")
+
+
+def _cuisine_grid(selected: Iterable[str], *, prefix: str, done: str) -> InlineKeyboardMarkup:
+    """The grid both cuisine pickers draw. One layout, two callback prefixes."""
     chosen = set(selected)
     buttons = [
         InlineKeyboardButton(
             text=(f"{CHECK} " if slug in chosen else "") + label,
-            callback_data=f"cuisine:{slug}",
+            callback_data=f"{prefix}:{slug}",
         )
         for slug, (label, _) in CUISINES.items()
     ]
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
-    rows.append([InlineKeyboardButton(text="Done", callback_data="cuisine_done")])
+    rows.append([InlineKeyboardButton(text="Done", callback_data=done)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -1035,8 +1035,18 @@ async def daily_steps(
 
 
 async def latest_weight(session: AsyncSession, user_id: uuid.UUID) -> float | None:
-    """Most recent weight, whether it arrived by button or by health sync."""
-    return (await _weight_rows(session, user_id, 1))[0]
+    """Most recent weight, whether it arrived by button or by health sync.
+
+    None when there is none. The return type always said so and every caller
+    checks for it, but the body indexed [0] unconditionally and raised
+    IndexError instead — invisible while every user was seeded with a starting
+    weight from UMAI_START_WEIGHT_KG at row creation. A user whose weight
+    series is genuinely empty now exists: onboarding writes the first reading
+    only when the wizard completes, so a person can be active for the seconds
+    in between, and the evening summary would have died on them.
+    """
+    rows = await _weight_rows(session, user_id, 1)
+    return rows[0] if rows else None
 
 
 async def previous_weight(session: AsyncSession, user_id: uuid.UUID) -> float | None:

@@ -1,46 +1,62 @@
-"""Daily summary, evening check-in, weekly review, biweekly recalibration, backups.
+"""Daily summary, water reminders, weekly review, biweekly recalibration, backups.
 
 Every job must be idempotent. A restart mid-job or a missed window will re-run
 it, and sending the evening summary twice is exactly the kind of thing that
-makes a bot feel broken. Idempotency here is a (job, date) unique row in
-job_runs: the job claims its day before sending, and a restart finds the claim
-and does nothing.
+makes a bot feel broken. Idempotency here is a (job, day, user) unique row in
+job_runs: the job claims a user's day before sending, and a restart finds the
+claim and does nothing.
 
-Phase 1 runs two jobs: the evening summary at 21:30 local, and the food-table
-enrichment sweep every twenty minutes. Check-ins and the weekly review arrive
-with Phase 3/4; the scaffolding is deliberately minimal so adding them is a new
-function, not a redesign.
+**One tick, not one cron per person.** The scheduled work is per user now, and
+each user keeps their own zone and their own summary hour, so there is no
+single time at which "the evening summary" fires. Two shapes were possible: a
+cron job per distinct timezone, or an interval job that runs often and asks who
+has just come due. The interval wins on four counts, in order of weight:
 
-The two have opposite idempotency needs, and get different mechanisms. The
-summary must happen exactly once per day, so it claims a (job, day) row. The
-enrichment sweep is meant to run many times a day and simply must not overlap
+  * The process timezone stops mattering at all. An interval trigger has no
+    zone, so the whole `scheduling_tz` apparatus — and the seven-hour
+    disagreement between the environment and the user row that it was written
+    to patch — simply disappears.
+  * Nothing needs re-registering when somebody onboards, moves, or changes
+    their summary time. A cron-per-zone scheme has to reconcile its job ids
+    against the database at runtime, which is the same query this does anyway.
+  * DST becomes a non-question.
+  * A missed window self-heals, because the claim is per user per day.
+
+The cost is one indexed query every five minutes over a table with a handful of
+rows, and a worst-case five minutes of lateness that nobody perceives.
+
+The enrichment sweep is the exception and keeps its own interval job: it is not
+per user, it is meant to run many times a day, and it simply must not overlap
 itself, so it takes a Postgres advisory lock and the loser does nothing.
-
-Water reminders use (job, day) uniqueness like the summary, but allow up to
-three claims per day (water_reminder_1, water_reminder_2, water_reminder_3).
-Escalating intervals — 3 h, 6 h, 12 h — are enforced by checking how long
-has elapsed since the previous reminder, not by scheduling separate jobs.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import uuid
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from umai.analytics import charts as charts_mod
 from umai.clock import Clock, local_date, today
 from umai.core import tools
-from umai.db.models import JobRun, User
+from umai.db.models import JobRun, User, UserStatus
 
 log = logging.getLogger(__name__)
 
-SUMMARY_HOUR = 21
-SUMMARY_MINUTE = 30
+# How often the tick looks for users who have come due. Five minutes is small
+# enough that nobody notices the lateness and large enough that an idle
+# deployment costs one indexed query per tick.
+TICK_MINUTES = 5
+
+# Mirrors the column defaults on `users`. The row is the source of truth; these
+# exist so a caller constructing a user in a test does not have to guess.
+DEFAULT_SUMMARY_HOUR = 21
+DEFAULT_SUMMARY_MINUTE = 30
 
 # How often the enrichment sweep looks for gaps. Frequent enough that a meal
 # logged at lunch has its totals filled in long before the evening summary
@@ -48,56 +64,141 @@ SUMMARY_MINUTE = 30
 ENRICHMENT_MINUTES = 20
 
 
-async def claim(session: AsyncSession, job: str, day: dt.date) -> bool:
-    """Try to claim (job, day). False if already claimed — the restart case.
+async def claim(
+    session: AsyncSession, job: str, day: dt.date, user_id: uuid.UUID | None = None
+) -> bool:
+    """Try to claim (job, day, user). False if already claimed — the restart case.
 
-    INSERT ... ON CONFLICT DO NOTHING: two concurrent runs race, one wins,
-    the other sees the existing row and stands down.
+    INSERT ... ON CONFLICT DO NOTHING: two concurrent runs race, one wins, the
+    other sees the existing row and stands down.
+
+    The two cases take different arbiters, and that is not a detail. A nullable
+    column inside a UNIQUE is not restrictive in Postgres — NULL is never equal
+    to NULL — so a global claim cannot be carried by `uq_job_run_day_user` and
+    has a partial index of its own. That index cannot be named as a constraint
+    either, because it is not one; it has to be described, which is what
+    `index_elements` plus `index_where` does.
     """
-    stmt = (
-        insert(JobRun)
-        .values(job=job, day=day)
-        .on_conflict_do_nothing(constraint="uq_job_run_day")
-        .returning(JobRun.id)
+    values = insert(JobRun).values(job=job, day=day, user_id=user_id)
+    upsert = (
+        values.on_conflict_do_nothing(constraint="uq_job_run_day_user")
+        if user_id is not None
+        else values.on_conflict_do_nothing(
+            index_elements=["job", "day"],
+            index_where=text("user_id IS NULL"),
+        )
     )
+    stmt = upsert.returning(JobRun.id)
     won = (await session.execute(stmt)).scalar_one_or_none() is not None
     if won:
         await session.commit()
     return won
 
 
-async def evening_summary(session_factory, settings, clock: Clock, send) -> None:
-    """The 21:30 push: a chart and a couple of sentences, no wall of numbers.
+async def active_users(session: AsyncSession) -> list[User]:
+    """Everyone the scheduled jobs might have something to say to.
 
-    `send` is an async callable(bytes_png, caption) so the job has no Telegram
-    dependency and tests can capture instead of sending.
+    Users without a zone are excluded — and by the CHECK on `users` cannot be
+    active either, so the predicate is belt and braces rather than a real case.
+    """
+    rows = (
+        await session.execute(
+            select(User).where(User.status == UserStatus.active, User.tz.is_not(None))
+        )
+    ).scalars()
+    return list(rows)
+
+
+def summary_is_due(user: User, clock: Clock) -> bool:
+    """Has this user's local clock reached their summary time today.
+
+    Compared in Python rather than with `AT TIME ZONE`. SQL could express it,
+    but then the only way to test the boundary would be to move the database's
+    clock; in Python a `FakeClock` puts the whole fleet at any instant, which is
+    what the project's time abstraction exists for.
+
+    Only a lower bound is checked, with no upper one: the claim is what stops a
+    second send, so a tick at 23:55 for a 21:30 summary correctly sends the one
+    that a restart caused to be missed.
+    """
+    local = clock.now().astimezone(ZoneInfo(user.zone))
+    return local.time() >= dt.time(user.summary_hour, user.summary_minute)
+
+
+async def user_tick(session_factory, settings, clock: Clock, send, send_text=None) -> None:
+    """One pass over every active user.
+
+    Each user gets their own session scope, so a failure on one — a corrupt
+    row, a chart that will not render, a Telegram error — cannot take the rest
+    of the fleet down with it. One transaction for the whole pass would mean
+    the first exception silences everybody.
+
+    Which of the two jobs actually has anything to do is each job's own
+    decision, because they are due at different times: the summary after a
+    per-user hour in the evening, the water reminders through the waking day.
     """
     async with session_factory() as session:
-        user = (await session.execute(select(User).limit(1))).scalar_one_or_none()
-        if user is None:
-            return
-        day = today(clock, user.zone)
-        if not await claim(session, "evening_summary", day):
-            return
+        pending = [(u.id, u.telegram_id) for u in await active_users(session)]
 
-        totals = await tools.day_totals(session, user, clock)
-        if totals.entry_count == 0 and totals.kcal == 0:
-            return  # nothing logged: say nothing, rather than nag an empty day
-
-        target = None
-        weight = await tools.latest_weight(session, user.id)
-        if weight is not None:
+    for user_id, telegram_id in pending:
+        for job, extra in ((evening_summary, send), (water_reminder, send_text)):
+            if extra is None:
+                continue
             try:
-                target = tools.current_target(user, weight, clock)
-            except RuntimeError:
-                target = None
+                async with session_factory() as session:
+                    user = await session.get(User, user_id)
+                    if user is None:  # pragma: no cover - deleted mid-tick
+                        continue
+                    await job(session, settings, clock, extra, user, telegram_id)
+            except Exception:
+                log.exception("%s failed for %s", job.__name__, telegram_id)
 
-        days, kcal, _protein = await _last_days(session, user, clock, 7)
-        png = charts_mod.week_kcal(days, kcal, target.kcal_target if target else None)
-        steps = await tools.daily_steps(session, user, clock)
-        wt = tools.water_target(user, settings)
-        caption = tools.format_day(user, totals, target, steps=steps, water_target_ml=wt)
-        await send(png, caption)
+
+async def evening_summary(
+    session: AsyncSession,
+    settings,
+    clock: Clock,
+    send,
+    user: User,
+    telegram_id: int,
+) -> None:
+    """One user's evening push: a chart and a couple of sentences.
+
+    `send` is an async callable(telegram_id, png, caption) so the job has no
+    Telegram dependency and tests can capture instead of sending. The recipient
+    is passed in rather than looked up, because the caller already holds the row.
+
+    **The claim comes after the emptiness check, not before.** Claiming first
+    burned the day on a tick that then decided it had nothing to say, so
+    somebody who logged their first meal at ten in the evening got no summary at
+    all — the day was already spent. Claiming last still guarantees a single
+    send, because the claim precedes `send`.
+    """
+    if not summary_is_due(user, clock):
+        return
+
+    day = today(clock, user.zone)
+    totals = await tools.day_totals(session, user, clock)
+    if totals.entry_count == 0 and totals.kcal == 0:
+        return  # nothing logged: say nothing, rather than nag an empty day
+
+    if not await claim(session, "evening_summary", day, user.id):
+        return
+
+    target = None
+    weight = await tools.latest_weight(session, user.id)
+    if weight is not None:
+        try:
+            target = tools.current_target(user, weight, clock)
+        except RuntimeError:
+            target = None
+
+    days, kcal, _protein = await _last_days(session, user, clock, 7)
+    png = charts_mod.week_kcal(days, kcal, target.kcal_target if target else None)
+    steps = await tools.daily_steps(session, user, clock)
+    wt = tools.water_target(user, settings)
+    caption = tools.format_day(user, totals, target, steps=steps, water_target_ml=wt)
+    await send(telegram_id, png, caption)
 
 
 async def _last_days(
@@ -136,32 +237,6 @@ async def enrichment_sweep(session_factory, models, clock: Clock) -> None:
         log.info("enrichment sweep: %s", enrichment.summarise(report))
 
 
-async def scheduling_tz(session_factory, settings) -> str:
-    """The zone the evening summary should fire in.
-
-    The user's own, read from the database, because that is the same column
-    every other part of the job already uses: `evening_summary` computes "today"
-    with `today(clock, user.zone)` and `_last_days` walks back through
-    `local_date(..., user.zone)`. Firing the job on `settings.tz` while its
-    contents were computed in `user.zone` meant the two could disagree — and they
-    did, by seven hours, with the environment saying one city and the user row
-    another.
-
-    Falls back to the configured zone only when no user exists yet, which is the
-    first boot before anyone has sent a message.
-    """
-    async with session_factory() as session:
-        tz = (await session.execute(select(User.tz).limit(1))).scalar_one_or_none()
-    if tz and tz != settings.tz:
-        log.warning(
-            "scheduling in the user's zone %s, which differs from TZ=%s; "
-            "the user row wins because every daily total is computed from it",
-            tz,
-            settings.tz,
-        )
-    return tz or settings.tz
-
-
 # Water reminder escalation: hours to wait after each reminder before sending
 # the next. Three reminders total, then silence for the day.
 _WATER_REMINDER_DELTAS = [
@@ -177,73 +252,89 @@ _WATER_REMINDER_MESSAGES = [
 ]
 
 
-async def water_reminder(session_factory, settings, clock: Clock, send_text) -> None:
-    """Nudge the user to drink water with escalating intervals.
+# The local hours a reminder may be sent in. The escalation deltas already
+# space the reminders out; this is what stops the first of the day arriving at
+# 04:00 for someone whose target is simply not met yet because they are asleep.
+WATER_REMINDER_HOURS = range(10, 23)
 
-    Fires every 3 hours during waking hours (10, 13, 16, 19, 22). The first
-    tick that finds the user below target sends reminder #1. Subsequent ticks
-    only send when enough time has elapsed since the last reminder (6 h after
-    #1, 12 h after #2). After 3 reminders the job stays silent for the day.
 
-    `send_text` is an async callable(str) so the job has no Telegram
-    dependency.
+async def water_reminder(
+    session: AsyncSession,
+    settings,
+    clock: Clock,
+    send_text,
+    user: User,
+    telegram_id: int,
+) -> None:
+    """Nudge one user to drink water, with escalating intervals.
+
+    The first tick of the waking day that finds them below target sends
+    reminder #1; the next only goes out once enough time has passed (3 h after
+    #1, 6 h after #2, 12 h after #3). After three the job is silent until
+    tomorrow.
+
+    `send_text` is an async callable(telegram_id, str) so the job has no
+    Telegram dependency.
     """
-    async with session_factory() as session:
-        user = (await session.execute(select(User).limit(1))).scalar_one_or_none()
-        if user is None:
+    local = clock.now().astimezone(ZoneInfo(user.zone))
+    if local.hour not in WATER_REMINDER_HOURS:
+        return
+
+    day = today(clock, user.zone)
+    count = await _water_reminder_count(session, day, user.id)
+    if count >= len(_WATER_REMINDER_DELTAS):
+        return  # all three sent, done for the day
+
+    totals = await tools.day_totals(session, user, clock)
+    target = tools.water_target(user, settings)
+    if totals.water_ml >= target:
+        return  # already met the target, no reminder needed
+
+    if count > 0:
+        last_ran = await _water_reminder_last_ran(session, day, user.id)
+        if last_ran is None:  # pragma: no cover - count > 0 implies a row
             return
-        day = today(clock, user.zone)
+        if clock.now() - last_ran < _WATER_REMINDER_DELTAS[count - 1]:
+            return  # too soon
 
-        # How many reminders have already been sent today?
-        count = await _water_reminder_count(session, day)
-        if count >= len(_WATER_REMINDER_DELTAS):
-            return  # all three sent, done for the day
+    job_name = f"water_reminder_{count + 1}"
+    if not await claim(session, job_name, day, user.id):
+        return  # another tick got there first
 
-        totals = await tools.day_totals(session, user, clock)
-        target = tools.water_target(user, settings)
-
-        if totals.water_ml >= target:
-            return  # already met the target, no reminder needed
-
-        # Enforce escalating delay: check that enough time has passed since
-        # the previous reminder.
-        if count > 0:
-            last_ran = await _water_reminder_last_ran(session, day)
-            if last_ran is None:
-                # Shouldn't happen (count > 0 implies a row exists), but be safe.
-                return
-            elapsed = clock.now() - last_ran
-            if elapsed < _WATER_REMINDER_DELTAS[count - 1]:
-                return  # too soon
-
-        # Send the reminder.
-        job_name = f"water_reminder_{count + 1}"
-        if not await claim(session, job_name, day):
-            return  # race condition: another instance already sent it
-
-        remaining = target - totals.water_ml
-        msg = _WATER_REMINDER_MESSAGES[count].format(
-            logged=totals.water_ml,
-            remaining=remaining,
-            target=target,
-        )
-        await send_text(msg)
+    msg = _WATER_REMINDER_MESSAGES[count].format(
+        logged=totals.water_ml,
+        remaining=target - totals.water_ml,
+        target=target,
+    )
+    await send_text(telegram_id, msg)
 
 
-async def _water_reminder_count(session: AsyncSession, day: dt.date) -> int:
-    """Count water reminders sent on `day`."""
+async def _water_reminder_count(session: AsyncSession, day: dt.date, user_id: uuid.UUID) -> int:
+    """Count water reminders sent to this user on `day`.
+
+    Scoped to the user, like everything else keyed on job_runs now. Unscoped,
+    the second person to be reminded would find three reminders already
+    recorded for the day and never hear anything.
+    """
     stmt = select(func.count(JobRun.id)).where(
         JobRun.job.like("water_reminder_%"),
         JobRun.day == day,
+        JobRun.user_id == user_id,
     )
     return int((await session.execute(stmt)).scalar_one())
 
 
-async def _water_reminder_last_ran(session: AsyncSession, day: dt.date) -> dt.datetime | None:
-    """The timestamp of the most recent water reminder on `day`."""
+async def _water_reminder_last_ran(
+    session: AsyncSession, day: dt.date, user_id: uuid.UUID
+) -> dt.datetime | None:
+    """The timestamp of this user's most recent water reminder on `day`."""
     stmt = (
         select(JobRun.ran_at)
-        .where(JobRun.job.like("water_reminder_%"), JobRun.day == day)
+        .where(
+            JobRun.job.like("water_reminder_%"),
+            JobRun.day == day,
+            JobRun.user_id == user_id,
+        )
         .order_by(JobRun.ran_at.desc())
         .limit(1)
     )
@@ -258,55 +349,36 @@ def schedule(
     send,
     send_text=None,
     models=None,
-    tz: str | None = None,
 ) -> None:
-    """Register the Phase 1 jobs on an APScheduler instance.
+    """Register the jobs on an APScheduler instance.
 
-    `tz` is the zone the cron fires in and should come from `scheduling_tz`, so
-    that the hour the summary arrives and the day it summarises are the same
-    frame. Passing nothing falls back to the configured zone, which is only
-    right before a user exists.
-
-    Without an explicit zone APScheduler uses the *process* timezone, which in
-    a container is UTC unless something sets TZ, and "the 21:30 summary" fires
-    at half past midnight local.
+    No timezone argument any more, and none needed. The tick is an interval
+    trigger, which has no zone at all, and every decision it makes about when
+    something is due is computed from the user's own `tz` column. That removes
+    the failure this function used to carry a paragraph about: a cron firing in
+    the environment's zone while the summary it produced was computed in the
+    user's, seven hours apart, with neither side obviously wrong.
 
     The health endpoint and webhook do not schedule.
     """
-    zone = ZoneInfo(tz or settings.tz)
     scheduler.add_job(
-        evening_summary,
+        user_tick,
         kwargs={
             "session_factory": session_factory,
             "settings": settings,
             "clock": clock,
             "send": send,
+            "send_text": send_text,
         },
-        trigger="cron",
-        hour=SUMMARY_HOUR,
-        minute=SUMMARY_MINUTE,
-        timezone=zone,
-        id="evening_summary",
-        coalesce=True,  # a missed window while offline sends once, not per miss
-        misfire_grace_time=3600,
+        trigger="interval",
+        minutes=TICK_MINUTES,
+        id="user_tick",
+        coalesce=True,  # a missed window while offline runs once, not per miss
+        # The pass is idempotent through job_runs, but overlapping passes would
+        # duplicate the work for no gain.
+        max_instances=1,
+        misfire_grace_time=TICK_MINUTES * 60,
     )
-
-    if send_text is not None:
-        scheduler.add_job(
-            water_reminder,
-            kwargs={
-                "session_factory": session_factory,
-                "settings": settings,
-                "clock": clock,
-                "send_text": send_text,
-            },
-            trigger="cron",
-            hour="10,13,16,19,22",
-            timezone=zone,
-            id="water_reminder",
-            coalesce=True,
-            misfire_grace_time=1800,
-        )
 
     if models is not None:
         scheduler.add_job(

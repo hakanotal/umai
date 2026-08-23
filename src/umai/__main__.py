@@ -52,17 +52,23 @@ async def _persist_usage(**kw) -> None:
         logging.getLogger(__name__).warning("api_usage write failed", exc_info=True)
 
 
-async def _send_summary(png: bytes, caption: str) -> None:
-    """The scheduler's send hook: the evening summary as a photo into chat."""
+async def _send_summary(telegram_id: int, png: bytes, caption: str) -> None:
+    """The scheduler's send hook: one user's evening summary as a photo.
+
+    The recipient is a parameter because the scheduler ticks over every active
+    user and already holds the row. It used to be
+    `next(iter(settings.allowed_user_ids))` — an arbitrary member of an
+    environment variable, entirely unrelated to whose totals had just been
+    computed.
+    """
     from aiogram.types import BufferedInputFile
 
     from umai.telegram.app import build_bot
 
-    settings = get_settings()
-    bot = build_bot(settings)
+    bot = build_bot(get_settings())
     try:
         await bot.send_photo(
-            chat_id=next(iter(settings.allowed_user_ids)),
+            chat_id=telegram_id,
             photo=BufferedInputFile(png, filename="summary.png"),
             caption=caption,
         )
@@ -70,17 +76,13 @@ async def _send_summary(png: bytes, caption: str) -> None:
         await bot.session.close()
 
 
-async def _send_text(text: str) -> None:
-    """The scheduler's text send hook: plain text messages into chat."""
+async def _send_text(telegram_id: int, text: str) -> None:
+    """The scheduler's text send hook: a plain message to one user."""
     from umai.telegram.app import build_bot
 
-    settings = get_settings()
-    bot = build_bot(settings)
+    bot = build_bot(get_settings())
     try:
-        await bot.send_message(
-            chat_id=next(iter(settings.allowed_user_ids)),
-            text=text,
-        )
+        await bot.send_message(chat_id=telegram_id, text=text)
     finally:
         await bot.session.close()
 
@@ -112,11 +114,10 @@ async def amain() -> None:
     dispatcher = build_dispatcher(settings, SystemClock(), models)
     await bot.set_my_commands(COMMANDS)
 
-    # --- the evening summary, idempotent via the job_runs claim ------------
+    # --- the per-user tick, idempotent via the job_runs claim -------------
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     from umai.scheduler.jobs import schedule as schedule_jobs
-    from umai.scheduler.jobs import scheduling_tz
 
     scheduler = AsyncIOScheduler()
     schedule_jobs(
@@ -127,7 +128,6 @@ async def amain() -> None:
         _send_summary,
         send_text=_send_text,
         models=models,
-        tz=await scheduling_tz(get_factory(), settings),
     )
     scheduler.start()
 

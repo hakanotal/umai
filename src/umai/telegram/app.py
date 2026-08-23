@@ -1,28 +1,30 @@
 """Bot construction and startup.
 
 Long polling in dev, webhook in prod: a branch at startup, not two code paths.
-The allowlist middleware (TELEGRAM_ALLOWED_USER_IDS) runs before any handler,
-from the first commit. A Telegram bot is discoverable by anyone who guesses
-its username, and this one holds health data; unknown senders are ignored
-silently rather than told why, so an outsider learns nothing.
+
+Access is resolved before any handler by `AccessMiddleware`, which lives in
+`telegram/middleware.py` — a Telegram bot is discoverable by anyone who guesses
+its username, and this one holds health data. Strangers are not turned away
+here, though: they reach the gate router, which asks for the invite phrase and
+tells them nothing else. What keeps them out of the application is the
+`IsActive()` filter on the parent router in `handlers/__init__.py`.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
-from typing import Any
 
-from aiogram import BaseMiddleware, Bot, Dispatcher
+from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.types import BotCommand, TelegramObject
+from aiogram.types import BotCommand
 
 from umai.clock import Clock
 from umai.config.models import ModelClient
 from umai.config.settings import Settings
 from umai.perception.client import PerceptionClient
 from umai.telegram.handlers import router
+from umai.telegram.middleware import AccessMiddleware
 
 log = logging.getLogger(__name__)
 
@@ -36,31 +38,9 @@ COMMANDS = [
     BotCommand(command="dinnerware", description="plate sizes for portion estimates"),
     BotCommand(command="recipe", description="save a dish you cook often"),
     BotCommand(command="cuisines", description="what you usually eat"),
+    BotCommand(command="token", description="your Health Auto Export token"),
+    BotCommand(command="export", description="download everything I hold on you"),
 ]
-
-
-class AllowlistMiddleware(BaseMiddleware):
-    """Rejects anyone not on TELEGRAM_ALLOWED_USER_IDS, before any handler.
-
-    Silent by design: a reply to a stranger confirms the bot exists, is
-    active, and cares about ids — three things an outsider should not learn.
-    """
-
-    def __init__(self, allowed: frozenset[int]) -> None:
-        super().__init__()
-        self._allowed = allowed
-
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
-        sender = data.get("event_from_user")
-        if sender is None or sender.id not in self._allowed:
-            log.warning("ignored update from unknown user %s", getattr(sender, "id", None))
-            return None
-        return await handler(event, data)
 
 
 def build_dispatcher(settings: Settings, clock: Clock, models: ModelClient) -> Dispatcher:
@@ -69,11 +49,11 @@ def build_dispatcher(settings: Settings, clock: Clock, models: ModelClient) -> D
     dp["clock"] = clock
     dp["models"] = models
     dp["perception"] = PerceptionClient(models)
-    # On the update observer, not per message type: an allowlist attached to
+    # On the update observer, not per message type: a check attached to
     # `message` and `callback_query` leaves any handler added later for
     # edited_message, inline_query or my_chat_member unguarded, and the one
     # thing this middleware may never be is forgettable.
-    dp.update.outer_middleware(AllowlistMiddleware(settings.allowed_user_ids))
+    dp.update.outer_middleware(AccessMiddleware(settings))
     dp.include_router(router)
     return dp
 

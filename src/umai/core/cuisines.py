@@ -77,3 +77,28 @@ def describe(slugs: Iterable[str]) -> str:
     if not picked:
         return ""
     return ", ".join(CUISINES[s][1] for s in picked)
+
+
+def toggle(current: Iterable[str], slug: str) -> tuple[list[str], str | None]:
+    """Turn one cuisine on or off, and say what happened.
+
+    Returns the new list and a short note for the tap acknowledgement, or
+    `(unchanged, None)` when the limit is in the way — the caller decides how
+    loudly to say so, because a toast and an alert are different messages.
+
+    Extracted so the two pickers cannot drift. `/cuisines` and the onboarding
+    wizard draw the same grid behind opposite access filters, and duplicating
+    the limit check would eventually mean one of them enforcing a different
+    maximum than the other.
+    """
+    picked = list(current)
+    if slug in picked:
+        picked.remove(slug)
+        return normalise(picked), f"{label(slug)} off"
+    if len(picked) >= MAX_CUISINES:
+        return picked, None
+    picked.append(slug)
+    # Normalised on write so the prompt is stable across sessions: an unstable
+    # prompt is an unstable fingerprint, and perception_runs exists to tell
+    # prompt drift from model drift.
+    return normalise(picked), f"{label(slug)} on"
