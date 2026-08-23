@@ -27,18 +27,21 @@ from umai.telegram.handlers.common import (
     cb_message,
     live_entry_by_prefix,
 )
+from umai.telegram.middleware import Principal
 
 router = Router(name="edit")
 
 
 @router.callback_query(F.data == "editlist")
-async def edit_list_open(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+async def edit_list_open(
+    callback: CallbackQuery, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     attached = cb_message(callback)
     if attached is None:
         await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
         return
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        user = await tools.load_user(session, principal.id)
         entries = await tools.today_entries(session, user, clock)
     if not entries:
         await callback.answer("Nothing logged today yet.", show_alert=True)
@@ -62,7 +65,11 @@ async def edit_list_close(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("edit:"))
 async def edit_entry_open(
-    callback: CallbackQuery, state: FSMContext, settings: Settings, clock: Clock
+    callback: CallbackQuery,
+    state: FSMContext,
+    settings: Settings,
+    clock: Clock,
+    principal: Principal,
 ) -> None:
     """The per-entry view: a meal gets per-item gram fixes and removal,
     water gets a new amount and removal."""
@@ -73,7 +80,7 @@ async def edit_entry_open(
     await state.clear()
     prefix = cb_data(callback).split(":", 1)[1]
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        user = await tools.load_user(session, principal.id)
         entry = await live_entry_by_prefix(session, user.id, prefix)
         if entry is None:
             await callback.answer("That entry is gone. Tap ↩ Back for the list.", show_alert=True)
@@ -105,14 +112,16 @@ async def delete_ask(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data.startswith("delyes:"))
-async def delete_confirm(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+async def delete_confirm(
+    callback: CallbackQuery, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     attached = cb_message(callback)
     if attached is None:
         await callback.answer("This list is out of date. Tap ✏️ Edit today again.", show_alert=True)
         return
     prefix = cb_data(callback).split(":", 1)[1]
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        user = await tools.load_user(session, principal.id)
         entry = await live_entry_by_prefix(session, user.id, prefix)
         if entry is not None:
             await tools.hard_delete_entry(session, user.id, entry.id)

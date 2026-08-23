@@ -32,8 +32,8 @@ from umai.telegram.handlers.common import (
     cb_message,
     entry_by_prefix,
     live_entry_by_prefix,
-    sender_id,
 )
+from umai.telegram.middleware import Principal
 
 router = Router(name="confirm")
 
@@ -61,7 +61,7 @@ async def meal_ok(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Awaiting.number, F.text)
 async def number_received(
-    message: Message, state: FSMContext, settings: Settings, clock: Clock
+    message: Message, state: FSMContext, settings: Settings, clock: Clock, principal: Principal
 ) -> None:
     data = await state.get_data()
     assert message.text is not None  # the F.text filter guarantees it
@@ -72,7 +72,7 @@ async def number_received(
         return
 
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         if data.get("mode") == "weight":
             if not safety.is_plausible_weight(value):
                 await message.answer(

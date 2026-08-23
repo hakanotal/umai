@@ -22,7 +22,8 @@ from umai.db.models import EntrySource, Food, FoodState, GramsSource, Resolution
 from umai.db.session import session_scope
 from umai.resolver.match import Resolution
 from umai.telegram import keyboards
-from umai.telegram.handlers.common import cb_data, cb_message, sender_id
+from umai.telegram.handlers.common import cb_data, cb_message
+from umai.telegram.middleware import Principal
 
 router = Router(name="library")
 
@@ -32,10 +33,12 @@ router = Router(name="library")
 
 
 @router.message(Command("library"))
-async def library_command(message: Message, settings: Settings, clock: Clock) -> None:
+async def library_command(
+    message: Message, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     """Show the user's most frequent foods for one-tap re-logging."""
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         items = await tools.user_library(session, user.id)
     if not items:
         await message.answer(
@@ -50,7 +53,11 @@ async def library_command(message: Message, settings: Settings, clock: Clock) ->
 
 @router.callback_query(F.data.startswith("lib:"))
 async def library_quick_log(
-    callback: CallbackQuery, settings: Settings, clock: Clock, models: ModelClient
+    callback: CallbackQuery,
+    settings: Settings,
+    clock: Clock,
+    models: ModelClient,
+    principal: Principal,
 ) -> None:
     """One-tap log from the library. Uses the typical portion."""
     food_id_str = cb_data(callback).split(":", 1)[1]
@@ -61,7 +68,7 @@ async def library_quick_log(
         return
 
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        user = await tools.load_user(session, principal.id)
         food = await session.get(Food, food_id)
         if food is None:
             await callback.answer("That food no longer exists.", show_alert=True)

@@ -23,7 +23,8 @@ from umai.core import cuisines as cuisines_mod
 from umai.db.models import EntryKind
 from umai.db.session import session_scope
 from umai.telegram import keyboards
-from umai.telegram.handlers.common import Awaiting, sender_id
+from umai.telegram.handlers.common import Awaiting
+from umai.telegram.middleware import Principal
 
 router = Router(name="menu")
 
@@ -40,15 +41,13 @@ MENU_LABELS = {
 
 @router.message(F.text.in_(MENU_LABELS))
 async def menu_button(
-    message: Message, state: FSMContext, settings: Settings, clock: Clock
+    message: Message, state: FSMContext, settings: Settings, clock: Clock, principal: Principal
 ) -> None:
     assert message.text is not None  # the F.text filter guarantees it
     label = message.text
     if label == keyboards.WATER_250:
         async with session_scope() as session:
-            user = await tools.get_or_create_user(
-                session, settings, sender_id(message), clock=clock
-            )
+            user = await tools.load_user(session, principal.id)
             await tools.log_simple(
                 session,
                 user.id,
@@ -67,24 +66,18 @@ async def menu_button(
         return
     if label == keyboards.BTN_TODAY:
         async with session_scope() as session:
-            user = await tools.get_or_create_user(
-                session, settings, sender_id(message), clock=clock
-            )
+            user = await tools.load_user(session, principal.id)
             text = await agent.summary_line(session, user, clock, settings)
         await message.answer(text, reply_markup=keyboards.summary_actions())
         return
     if label == keyboards.BTN_WEEK:
         async with session_scope() as session:
-            user = await tools.get_or_create_user(
-                session, settings, sender_id(message), clock=clock
-            )
+            user = await tools.load_user(session, principal.id)
             await message.answer(await agent.week_summary(session, user, clock))
         return
     if label == keyboards.BTN_EDIT:
         async with session_scope() as session:
-            user = await tools.get_or_create_user(
-                session, settings, sender_id(message), clock=clock
-            )
+            user = await tools.load_user(session, principal.id)
             entries = await tools.today_entries(session, user, clock)
         if not entries:
             await message.answer("Nothing logged today yet.")
@@ -121,28 +114,27 @@ async def configure_recipe(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "cfg:dinnerware")
-async def configure_dinnerware(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+async def configure_dinnerware(
+    callback: CallbackQuery, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     """Show the dinnerware list from the configure menu."""
     from umai.telegram.handlers.dinnerware import show_dinnerware
 
     await callback.answer()
-    await show_dinnerware(callback, settings, clock)
+    await show_dinnerware(callback, settings, clock, principal)
 
 
 @router.callback_query(F.data == "cfg:cuisines")
-async def configure_cuisines(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+async def configure_cuisines(
+    callback: CallbackQuery, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     """Show the cuisine picker from the configure menu."""
     from umai.core import tools as tools_mod
     from umai.db.session import session_scope
 
     await callback.answer()
     async with session_scope() as session:
-        user = await tools_mod.get_or_create_user(
-            session,
-            settings,
-            callback.from_user.id,
-            clock=clock,  # type: ignore[union-attr]
-        )
+        user = await tools_mod.load_user(session, principal.id)
         selected = list(user.cuisines or [])
     await callback.message.answer(  # type: ignore[union-attr]
         _CUISINE_BLURB, reply_markup=keyboards.cuisines(selected)
@@ -151,7 +143,11 @@ async def configure_cuisines(callback: CallbackQuery, settings: Settings, clock:
 
 @router.callback_query(F.data == "cfg:water")
 async def configure_water(
-    callback: CallbackQuery, state: FSMContext, settings: Settings, clock: Clock
+    callback: CallbackQuery,
+    state: FSMContext,
+    settings: Settings,
+    clock: Clock,
+    principal: Principal,
 ) -> None:
     """Ask for a new water target in ml."""
     await callback.answer()
@@ -159,12 +155,7 @@ async def configure_water(
     await state.update_data(mode="water_target")
     current = None
     async with session_scope() as session:
-        user = await tools.get_or_create_user(
-            session,
-            settings,
-            callback.from_user.id,
-            clock=clock,  # type: ignore[union-attr]
-        )
+        user = await tools.load_user(session, principal.id)
         current = user.water_target_ml
     if current is not None:
         hint = (

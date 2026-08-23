@@ -21,13 +21,16 @@ from umai.core import cuisines as cuisines_mod
 from umai.core import tools
 from umai.db.session import session_scope
 from umai.telegram import keyboards
-from umai.telegram.handlers.common import cb_data, cb_message, sender_id
+from umai.telegram.handlers.common import cb_data, cb_message
+from umai.telegram.middleware import Principal
 
 router = Router(name="cuisines")
 
 
 @router.message(Command("cuisines"))
-async def cuisines_command(message: Message, settings: Settings, clock: Clock) -> None:
+async def cuisines_command(
+    message: Message, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     """Pick the cuisines you actually eat.
 
     Not a preference setting. The list is injected into the vision model's
@@ -37,7 +40,7 @@ async def cuisines_command(message: Message, settings: Settings, clock: Clock) -
     that, something the enrichment job can research.
     """
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         selected = list(user.cuisines or [])
     await message.answer(_CUISINE_BLURB, reply_markup=keyboards.cuisines(selected))
 
@@ -50,11 +53,13 @@ _CUISINE_BLURB = (
 
 
 @router.callback_query(F.data.startswith("cuisine:"))
-async def cuisine_toggle(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+async def cuisine_toggle(
+    callback: CallbackQuery, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     slug = cb_data(callback).split(":", 1)[1]
     attached = cb_message(callback)
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        user = await tools.load_user(session, principal.id)
         current = list(user.cuisines or [])
         if slug in current:
             current.remove(slug)
@@ -82,9 +87,11 @@ async def cuisine_toggle(callback: CallbackQuery, settings: Settings, clock: Clo
 
 
 @router.callback_query(F.data == "cuisine_done")
-async def cuisine_done(callback: CallbackQuery, settings: Settings, clock: Clock) -> None:
+async def cuisine_done(
+    callback: CallbackQuery, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, callback.from_user.id, clock=clock)
+        user = await tools.load_user(session, principal.id)
         selected = list(user.cuisines or [])
     attached = cb_message(callback)
     named = ", ".join(cuisines_mod.label(s) for s in selected) or "nothing yet"

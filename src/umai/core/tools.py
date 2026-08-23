@@ -1225,48 +1225,24 @@ def format_day(
 # ---------------------------------------------------------------------------
 
 
-async def get_or_create_user(
-    session: AsyncSession, settings: Settings, telegram_id: int, *, clock: Clock
-) -> User:
-    """Single-user auto-registration, person fields seeded from settings.
+async def load_user(session: AsyncSession, user_id: uuid.UUID) -> User:
+    """The row behind a `Principal`, by primary key.
 
-    A plausible-looking wrong default for sex or height would poison BMR and
-    the floors, so those stay empty (and targets refuse to compute) until the
-    environment provides them.
+    Replaces `get_or_create_user`, which every handler called on every message
+    and which seeded a new row's timezone, sex, height, birth date, goal rate,
+    cuisines and starting weight from the process environment. That made the
+    second person to use the bot a clone of the first: their BMR, their safety
+    floors and their local day all belonged to somebody else. Those fields come
+    from the onboarding wizard now, per person.
+
+    Creating rows is no longer a handler's business either — `AccessMiddleware`
+    has already resolved or created one before any handler runs, so an absent
+    row here is not a first-time user but a broken invariant, and raising says
+    so rather than quietly manufacturing an empty person.
     """
-    user = (
-        await session.execute(select(User).where(User.telegram_id == telegram_id))
-    ).scalar_one_or_none()
-    if user is not None:
-        return user
-
-    user = User(
-        telegram_id=telegram_id,
-        tz=settings.tz,
-        sex=settings.sex or None,
-        height_cm=settings.height_cm,
-        birth_date=settings.birth_date,
-        goal_rate_kg_per_week=settings.goal_rate_kg_per_week,
-        # A seed, not a setting. /cuisines is the source of truth from here on,
-        # and an empty list is a perfectly good starting point.
-        cuisines=settings.cuisine_list,
-        water_target_ml=settings.water_target_ml,
-    )
-    session.add(user)
-    await session.flush()
-
-    if settings.start_weight_kg is not None:
-        # The weight series starts at onboarding, not at the first manual
-        # weigh-in, so trend and calibration have a baseline from day one.
-        await log_simple(
-            session,
-            user.id,
-            kind=EntryKind.weight,
-            value=settings.start_weight_kg,
-            unit="kg",
-            occurred_at=clock.now(),
-            source=EntrySource.manual,
-        )
+    user = await session.get(User, user_id)
+    if user is None:
+        raise RuntimeError(f"no user row for {user_id}; the access middleware should have made one")
     return user
 
 

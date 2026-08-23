@@ -15,7 +15,7 @@ from umai.config.settings import Settings
 from umai.core import agent, tools
 from umai.db.session import session_scope
 from umai.telegram import keyboards
-from umai.telegram.handlers.common import sender_id
+from umai.telegram.middleware import Principal
 
 router = Router(name="commands")
 
@@ -28,25 +28,27 @@ async def start(message: Message) -> None:
 
 @router.message(Command("summary"))
 @router.message(Command("today"))
-async def today(message: Message, settings: Settings, clock: Clock) -> None:
+async def today(message: Message, settings: Settings, clock: Clock, principal: Principal) -> None:
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         text = await agent.summary_line(session, user, clock, settings)
     await message.answer(text, reply_markup=keyboards.summary_actions())
 
 
 @router.message(Command("week"))
-async def week(message: Message, settings: Settings, clock: Clock) -> None:
+async def week(message: Message, settings: Settings, clock: Clock, principal: Principal) -> None:
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         await message.answer(await agent.week_summary(session, user, clock))
 
 
 @router.message(Command("edit"))
-async def edit_command(message: Message, settings: Settings, clock: Clock) -> None:
+async def edit_command(
+    message: Message, settings: Settings, clock: Clock, principal: Principal
+) -> None:
     """The typed door into the edit flow. Same view as the ✏️ Edit today button."""
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         entries = await tools.today_entries(session, user, clock)
     if not entries:
         await message.answer("Nothing logged today yet.")

@@ -25,7 +25,8 @@ from umai.db.models import Food, FoodState, Recipe, RecipeIngredient
 from umai.db.session import session_scope
 from umai.resolver.compute import FoodLike, recipe_profile
 from umai.resolver.match import Resolver
-from umai.telegram.handlers.common import Awaiting, sender_id
+from umai.telegram.handlers.common import Awaiting
+from umai.telegram.middleware import Principal
 
 router = Router(name="recipes")
 
@@ -86,7 +87,11 @@ def parse_ingredient(text: str) -> tuple[str, float, str] | None:
 
 @router.message(Awaiting.recipe_ingredients)
 async def recipe_ingredient_received(
-    message: Message, state: FSMContext, settings: Settings, clock: Clock
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+    clock: Clock,
+    principal: Principal,
 ) -> None:
     """Handle each ingredient text, or /done, or /cancel."""
     text = (message.text or "").strip()
@@ -123,7 +128,7 @@ async def recipe_ingredient_received(
                 await message.answer("Send a positive number, or /skip.")
                 return
         await state.update_data(recipe_cooked_grams=cooked_grams)
-        await _finish_recipe(message, state, settings, clock)
+        await _finish_recipe(message, state, settings, clock, principal)
         return
 
     parsed = parse_ingredient(text)
@@ -147,10 +152,7 @@ async def recipe_ingredient_received(
 
 
 async def _finish_recipe(
-    message: Message,
-    state: FSMContext,
-    settings: Settings,
-    clock: Clock,
+    message: Message, state: FSMContext, settings: Settings, clock: Clock, principal: Principal
 ) -> None:
     """Resolve all ingredients, create the Recipe row, compute per-100g."""
     data = await state.get_data()
@@ -159,7 +161,7 @@ async def _finish_recipe(
     cooked_grams = data.get("recipe_cooked_grams")
 
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         resolver = Resolver(session)
 
         # Resolve each ingredient to a food row

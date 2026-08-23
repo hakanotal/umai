@@ -14,10 +14,10 @@ from sqlalchemy import select
 
 from umai.analytics import safety
 from umai.clock import FakeClock
-from umai.config.settings import Settings
 from umai.core import tools
-from umai.db.models import Correction, EntryKind, Food, FoodSource, FoodState, LogEntry
+from umai.db.models import Correction, EntryKind, Food, FoodSource, FoodState, LogEntry, UserStatus
 from umai.resolver.match import Resolution, ResolutionMethod
+from umai.telegram.middleware import ensure_user
 
 pytestmark = pytest.mark.integration
 
@@ -307,21 +307,41 @@ async def test_the_target_refuses_to_compute_without_person_fields(session, user
         tools.current_target(user, 88.0, CLOCK)
 
 
-async def test_get_or_create_user_seeds_person_fields_from_settings(session):
-    settings = Settings(
-        UMAI_SEX="male",
-        UMAI_HEIGHT_CM=180.0,
-        UMAI_BIRTH_DATE="1990-05-01",
-        TELEGRAM_ALLOWED_USER_IDS="1",
-        UMAI_START_WEIGHT_KG=88.0,
-    )
-    user = await tools.get_or_create_user(session, settings, 123456, clock=CLOCK)
-    assert user.sex == "male"
-    assert await tools.latest_weight(session, user.id) == pytest.approx(88.0)
-    again = await tools.get_or_create_user(session, settings, 123456, clock=CLOCK)
+async def test_ensure_user_creates_a_pending_row_and_seeds_nothing(session):
+    """The replacement for `get_or_create_user`, and the point of replacing it.
+
+    Its predecessor copied timezone, sex, height, birth date, goal rate,
+    cuisines and a starting weight out of the environment onto every row it
+    created, which made the second person to use the bot a clone of the first:
+    their BMR, their safety floors and their local day all belonged to somebody
+    else. Nothing is seeded now, and the empty fields are what the onboarding
+    wizard is for.
+    """
+    user = await ensure_user(session, 123456)
+    assert user.status == UserStatus.pending
+    assert (user.tz, user.sex, user.height_cm, user.birth_date) == (None, None, None, None)
+    assert list(user.cuisines) == []
+    assert await tools.latest_weight(session, user.id) is None
+
+    again = await ensure_user(session, 123456)
     assert again.id == user.id
-    # start weight is only seeded once, not on every login
-    assert await tools.previous_weight(session, user.id) is None
+
+
+async def test_the_bootstrap_admin_skips_the_invite_phrase(session):
+    """Otherwise the first run of a fresh deployment has nobody who can admit
+    anybody — including themselves."""
+    user = await ensure_user(session, 999, bootstrap_admin_id=999)
+    assert user.status == UserStatus.onboarding
+    assert user.is_admin is True
+
+
+async def test_load_user_raises_rather_than_inventing_a_person(session):
+    """The middleware has always created the row before a handler runs, so an
+    absent one is a broken invariant rather than a first-time user."""
+    import uuid as _uuid
+
+    with pytest.raises(RuntimeError, match="access middleware"):
+        await tools.load_user(session, _uuid.uuid4())
 
 
 async def test_format_day_mentions_unmatched_items(session, user):

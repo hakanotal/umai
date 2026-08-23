@@ -22,7 +22,8 @@ from umai.core import agent, tools
 from umai.db.models import FoodItem
 from umai.db.session import session_scope
 from umai.telegram import keyboards
-from umai.telegram.handlers.common import nudge_enrichment, sender_id
+from umai.telegram.handlers.common import nudge_enrichment
+from umai.telegram.middleware import Principal
 
 log = logging.getLogger(__name__)
 
@@ -30,10 +31,12 @@ router = Router(name="text")
 
 
 @router.message(F.text)
-async def text(message: Message, settings: Settings, clock: Clock, models: ModelClient) -> None:
+async def text(
+    message: Message, settings: Settings, clock: Clock, models: ModelClient, principal: Principal
+) -> None:
     assert message.text is not None  # the F.text filter guarantees it
     async with session_scope() as session:
-        user = await tools.get_or_create_user(session, settings, sender_id(message), clock=clock)
+        user = await tools.load_user(session, principal.id)
         try:
             reply = await agent.handle_text(
                 session=session,

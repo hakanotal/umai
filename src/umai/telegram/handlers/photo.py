@@ -38,7 +38,8 @@ from umai.perception import images as image_tools
 from umai.perception import prompt as prompt_mod
 from umai.perception.client import PerceptionClient
 from umai.telegram import keyboards
-from umai.telegram.handlers.common import nudge_enrichment, sender_id
+from umai.telegram.handlers.common import nudge_enrichment
+from umai.telegram.middleware import Principal
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ async def photo(
     clock: Clock,
     models: ModelClient,
     perception: PerceptionClient,
+    principal: Principal,
 ) -> None:
     """The four-stage pipeline. The happy path is one reply, a few seconds.
 
@@ -79,9 +81,7 @@ async def photo(
 
         # 1. read what is needed for the prompt, then close the transaction.
         async with session_scope() as session:
-            user = await tools.get_or_create_user(
-                session, settings, sender_id(message), clock=clock
-            )
+            user = await tools.load_user(session, principal.id)
             user_id, tz, cuisines = user.id, user.zone, list(user.cuisines or [])
             ctx = prompt_mod.PromptContext(
                 dinnerware=await tools.list_dinnerware(session, user_id),
@@ -102,9 +102,7 @@ async def photo(
 
         # 3. resolve, write, reply.
         async with session_scope() as session:
-            user = await tools.get_or_create_user(
-                session, settings, sender_id(message), clock=clock
-            )
+            user = await tools.load_user(session, principal.id)
             logged = await agent.log_photo(
                 session=session,
                 models=models,

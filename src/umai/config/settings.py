@@ -7,7 +7,6 @@ those is a bug that only appears after deploy.
 
 from __future__ import annotations
 
-from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -62,31 +61,25 @@ class Settings(BaseSettings):
     http_host: str = Field(default="127.0.0.1", alias="UMAI_HTTP_HOST")
     http_port: int = Field(default=8000, alias="UMAI_HTTP_PORT")
 
-    # --- The person --------------------------------------------------------
-    # No defaults on purpose. BMR, the safety floors and the initial expenditure
-    # estimate are all seeded from these, and a plausible-looking wrong default
-    # is worse than a startup failure.
-    # No default, deliberately. A hardcoded city here is exactly the
-    # "plausible-looking wrong default" the person fields below refuse to have:
-    # it silently seeds every user row and every local-day boundary, and it
-    # looks right until someone notices their day starts at the wrong hour.
-    # check_startup() refuses to boot without it.
+    # --- Locale ------------------------------------------------------------
+    # Demoted, deliberately. This used to seed every new user row's timezone,
+    # which is exactly the "plausible-looking wrong default" the person fields
+    # below refused to have — silently giving a stranger the operator's city
+    # and therefore the operator's idea of when their day starts. The zone is a
+    # per-user column now, asked for by the onboarding wizard.
+    #
+    # What is left is a process-level default: log timestamps, and the headless
+    # scripts in tools/ that have no user to ask. Nothing seeds from it, and
+    # the scheduler no longer reads it at all, because an interval trigger has
+    # no zone.
     tz: str = Field(default="", alias="TZ")
-    sex: Literal["male", "female", ""] = Field(default="", alias="UMAI_SEX")
-    height_cm: float | None = Field(default=None, alias="UMAI_HEIGHT_CM")
-    birth_date: date | None = Field(default=None, alias="UMAI_BIRTH_DATE")
-    goal_rate_kg_per_week: float = Field(default=-0.5, alias="UMAI_GOAL_RATE_KG_PER_WEEK")
-    # Seeds the first weight reading at onboarding. The calibration engine
-    # depends on the weight series more than anything else, so the series
-    # should start from day one rather than from the first manual weigh-in.
-    start_weight_kg: float | None = Field(default=None, alias="UMAI_START_WEIGHT_KG")
-    # Comma-separated cuisine slugs, seeding a new user's list. What the user
-    # eats is the single cheapest piece of context a perception model can be
-    # given: "reddish paste on thin flatbread" is a guess, "lahmacun" is an
-    # identification, and only one of them resolves against a food table.
-    # Editable in chat afterwards with /cuisines, which is the source of truth.
-    cuisines: str = Field(default="turkish", alias="UMAI_CUISINES")
-    # Daily water intake target in ml. Seeds new users; editable in chat.
+
+    # --- Defaults for a new person -----------------------------------------
+    # Genuinely a system-wide default rather than somebody's data: everyone
+    # starts at 2500 ml and can change it in chat. Contrast the fields that
+    # used to live here — sex, height, birth date, goal rate, starting weight,
+    # cuisines — which were one person's body and are now columns on `users`,
+    # filled in by the wizard.
     water_target_ml: float = Field(default=2500.0, alias="UMAI_WATER_TARGET_ML")
 
     @field_validator("tz")
@@ -96,7 +89,8 @@ class Settings(BaseSettings):
 
         Otherwise a typo surfaces as ZoneInfoNotFoundError from somewhere deep
         in a handler, hours later, on whichever request first needed a local
-        date.
+        date. Still worth having now that this is only a process default: the
+        headless scripts in tools/ read it, and they fail in the same way.
         """
         if not v:
             return v
@@ -133,33 +127,8 @@ class Settings(BaseSettings):
         return v
 
     @property
-    def cuisine_list(self) -> list[str]:
-        from umai.core.cuisines import normalise
-
-        return normalise((self.cuisines or "").replace(";", ",").split(","))
-
-    @property
     def use_webhook(self) -> bool:
         return self.env == "prod"
-
-    def require_person(self) -> None:
-        """Fail loudly rather than guess. Called by anything that computes a target."""
-        missing = [
-            name
-            for name, value in (
-                ("UMAI_SEX", self.sex),
-                ("UMAI_HEIGHT_CM", self.height_cm),
-                ("UMAI_BIRTH_DATE", self.birth_date),
-            )
-            if not value
-        ]
-        if missing:
-            raise RuntimeError(
-                "Cannot compute a calorie target without: "
-                + ", ".join(missing)
-                + ". These seed BMR and the safety floors;"
-                + " see docs/umai-project-plan.md section 11."
-            )
 
     def check_startup(self) -> list[str]:
         """Problems worth refusing to start over. Returns human-readable strings."""
@@ -178,19 +147,14 @@ class Settings(BaseSettings):
             )
         if not self.openrouter_api_key:
             problems.append("OPENROUTER_API_KEY is unset: photo logging will fail")
-        if not self.tz:
-            problems.append(
-                "TZ is unset: it decides where every local day starts, seeds new "
-                "user rows, and sets the hour the evening summary fires. Guessing "
-                "it wrong is invisible until a day lands on the wrong date."
-            )
+        # TZ is no longer refused. It seeded every user row and set the hour
+        # the summary fired, and both of those are per-user columns now; what
+        # is left is a process default that nothing load-bearing reads.
         if self.env == "prod":
             if not self.telegram_webhook_url:
                 problems.append("prod needs TELEGRAM_WEBHOOK_URL")
             if not self.telegram_webhook_secret:
                 problems.append("prod needs TELEGRAM_WEBHOOK_SECRET")
-            if not self.health_ingest_token:
-                problems.append("prod needs HEALTH_INGEST_TOKEN: the ingest endpoint is exposed")
         return problems
 
 
