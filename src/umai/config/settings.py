@@ -121,7 +121,14 @@ class Settings(BaseSettings):
             ) from exc
         return v
 
-    MIN_INVITE_PHRASE_LEN: ClassVar[int] = 12
+    # Eight, not twelve. The real control is the five-attempt lockout in
+    # handlers/gate.py — nothing survives an online guessing attack that a
+    # length rule would have stopped and five permanent strikes would not. What
+    # this floor still catches is the genuinely careless: "1234", "test", an
+    # accidentally truncated paste. Judging whether a phrase is guessable by
+    # somebody who knows you is not something a character count can do, and
+    # pretending otherwise was the weaker part of the original rule.
+    MIN_INVITE_PHRASE_LEN: ClassVar[int] = 8
 
     @field_validator("invite_phrase")
     @classmethod

@@ -99,11 +99,16 @@ def test_startup_refuses_without_a_bootstrap_admin():
     assert any("BOOTSTRAP_ADMIN" in p for p in problems)
 
 
-def test_a_short_invite_phrase_is_rejected_at_load():
-    """Five wrong guesses is all anyone gets, so the phrase has to be worth
-    more than five guesses."""
+def test_a_careless_invite_phrase_is_rejected_at_load():
+    """The floor catches the obviously careless — a truncated paste, "1234" —
+    and nothing more. Guessability by somebody who knows you is not something a
+    character count can judge; the five-attempt lockout is the real control."""
     with pytest.raises(ValidationError, match="at least"):
-        settings(UMAI_INVITE_CODE="hunter2")
+        settings(UMAI_INVITE_CODE="1234")
+
+
+def test_a_short_but_deliberate_phrase_is_accepted():
+    assert settings(UMAI_INVITE_CODE="Albany2026").invite_phrase == "Albany2026"
 
 
 def test_a_healthy_configuration_has_no_problems():

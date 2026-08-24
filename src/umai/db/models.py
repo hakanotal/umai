@@ -221,6 +221,17 @@ class User(Base):
     # Editable in chat via the Configure menu; the evening summary and
     # water reminders read it to decide whether to nudge.
     water_target_ml: Mapped[float | None] = mapped_column(Float)
+    # The weight the user gave during onboarding, kept because every wizard
+    # step has to be a real column: the wizard derives "which question is
+    # owed" from the first unset field, so a step whose answer lives anywhere
+    # else is a question that can never be answered. It was a plain attribute
+    # on the ORM object once, which is not persisted — the answer vanished on
+    # commit and the wizard asked again, forever.
+    #
+    # It is *not* the weight series. `_finish` turns this into the first
+    # LogEntry, which is what trend and calibration read; this column only
+    # records what was said at onboarding.
+    onboarding_weight_kg: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[dt.datetime] = mapped_column(TS, server_default=func.now())
     # When the invite phrase was accepted. Null for the bootstrap admin, who
     # never needed one.
