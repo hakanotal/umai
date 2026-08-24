@@ -5,7 +5,7 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 ## Done
 
 - **Perception validated** (build-order step 1): all 24 `eval/photos` photos through the real path, zero parse failures, within-photo variance mean CV 0.07 (gate ~0.25, see `eval/README.md`). Bias measurement still lacks ground truth (see Todo).
-- **Full schema + four migrations**, Postgres 17 + pg_trgm, `alembic` one-shot migrations, pgAdmin on :5050 with the `sql/` queries mounted.
+- **Full schema + six migrations**, Postgres 17 + pg_trgm, `alembic` one-shot migrations, pgAdmin on :5050 with the `sql/` queries mounted.
 - **Four-stage logging pipeline**: photo → vision (name/state/grams only) → resolver (recipe → library → canonical → provisional) → pure-code arithmetic → one confirmation with per-item gram fixes.
 - **Food table**: 46 hand-transcribed USDA Foundation starter rows (Turkish aliases included); four importers (USDA, TurKomp, OpenFoodFacts, label-photo).
 - **Self-filling food table** (`core/enrichment.py`): background job researches unmatched names on the coach tier, gated in code by Atwater validation, writes tier-4 rows, backfills waiting items. Verified live (lahmacun 573 kcal where the first session reported 10).
@@ -22,13 +22,16 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Dinnerware calibration** (`/dinnerware`): measured once with a bank card beside the plate, stored per-user, injected into every photo prompt as the primary scale reference. CRUD via `/dinnerware name: description` with inline remove buttons.
 - **Recipe creation** (`/recipe`): schema, resolver tier, and compute path all existed; now wired to chat. Name the recipe, add ingredients one per message, optional cooked weight for yield factor, per-100g profile computed and stored.
 - **Food library one-tap** (`/library`): surfaces the user's most frequent foods with typical portions for one-tap re-logging.
-- **212 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
+- **362 tests green** (unit + Postgres integration), ruff + mypy clean, wall-clock ban holds.
 - **Repo cleanup**: integration tests moved out of `tests/fixtures/integration/` to
   `tests/integration/` where every doc already said they were; docs collected under `docs/`;
   empty stub packages (`core/prompts/`, `tests/sim/`) and the docstring-only
   `tools/benchmark_perception.py` removed; `telegram/handlers/` split from one 1,154-line
   module into one router per feature with the include order documented as load-bearing;
   the `papers/` ignore rule unanchored so 23MB of licensed PDFs cannot be committed by a move.
+
+- **Multi-user** (2026-08-23): invite phrase, chat onboarding wizard, per-user scheduler,
+  per-user health token, `/export` and `/delete_me`. See the dated section below.
 
 ## In progress
 
@@ -204,3 +207,122 @@ not happen. A day with steps but no food is still listed: a gap in logging is
 not a gap in living. `/summary` already carried the line.
 
 Real output: six days of backfill, 21,956 steps, 3,659/day.
+
+
+---
+
+## Multi-user (2026-08-23)
+
+The tool was built for one person, with a schema built for many, and the gap between those two
+facts turned out to be the whole of the work. The schema needed almost nothing: UUID keys, a
+unique `telegram_id`, `user_id` on twelve tables with cascades. What was single-user was
+everything that sat on top of it, and almost none of it was visible from inside a deployment
+with one user in the database — which is the general lesson worth keeping. A query that returns
+the right answer for one user is indistinguishable from a query that returns the only answer
+there is.
+
+**Where the person lived.** `UMAI_SEX`, `UMAI_HEIGHT_CM`, `UMAI_BIRTH_DATE`,
+`UMAI_GOAL_RATE_KG_PER_WEEK`, `UMAI_START_WEIGHT_KG`, `UMAI_CUISINES` and `TZ` were environment
+variables, copied onto every row `get_or_create_user` created. A second person was therefore
+born as a copy of the first, with the first person's BMR, safety floors, goal and local
+midnight. They are columns now, filled in by a seven-question chat wizard, and the environment
+block that held them is gone.
+
+The wizard holds no FSM state, which is the decision worth defending. The current question is
+derived from the first unset column on the row, so a restart mid-wizard resumes where it left
+off. aiogram's default storage is in memory; with a state machine, a restart would have dropped
+somebody into the free-text catch-all, where their answer of "180" is an entirely plausible
+meal. Deriving the step from the data also means the data and the state cannot disagree, because
+there is only one of them. The timezone question asks for a city rather than a zone — nobody
+knows their IANA name, everybody knows their city — and then confirms by echoing the local time
+back. That one extra tap is aimed squarely at the failure `progress.md` already recorded once,
+where a wrong zone sat unnoticed for weeks because nothing about it looks wrong until a day
+lands on the wrong date.
+
+**Access.** `TELEGRAM_ALLOWED_USER_IDS` became `UMAI_INVITE_CODE`. The alternative considered
+was a table of codes with expiry and per-invitee attribution, which is strictly more capable;
+it was rejected because the capability is not wanted and the phrase is never stored either way,
+so rotation is an edit and a restart and nothing else. Five wrong guesses blocks the guesser
+permanently, and that counter is what makes a short phrase defensible — without it a hidden
+phrase is an oracle answering several guesses a second. Refusals say "That isn't it" and no
+more: a message explaining the rule tells somebody who should not be here that there is a rule.
+
+Enforcement is one `IsActive()` filter on a parent router that owns all twelve feature routers,
+which works because aiogram checks a router's own filters before offering an update to any
+sub-router. The alternative — a filter on each router — was rejected for the reason the codebase
+already gives about the old allowlist: the one thing an access check may never be is
+forgettable, and twelve repetitions is twelve chances to forget. The remaining hole, a new
+router registered on the wrong parent, is closed by a test that enumerates the package and
+insists every `Router` appears in one of the two declared tuples.
+
+**The scheduler stopped being a cron.** Each user keeps their own zone and their own summary
+hour, so there is no single time at which "the evening summary" fires. One cron per distinct
+timezone would need re-registering whenever anybody onboarded or moved, and would still have to
+query who lives in that zone. An interval job every five minutes has no timezone at all, which
+deleted `scheduling_tz` outright along with the seven-hour environment-versus-row disagreement
+it had been written to patch; DST stopped being a question; and a missed window self-heals
+because the claim is per user per day. The cost is one indexed query per tick and a worst case
+of five minutes' lateness nobody perceives.
+
+The claim itself needed care. `job_runs` was unique on `(job, day)`, so with two users the first
+person summarised took the day and the second heard nothing. Adding `user_id` is not enough on
+its own: a nullable column inside a UNIQUE is not restrictive in Postgres, because NULL is never
+equal to NULL, so two genuinely global claims would both insert. The global case is carried by a
+partial unique index instead, and `claim()` picks its arbiter accordingly — a constraint by name
+for the per-user case, an index description for the global one, because an index cannot be named
+as a constraint.
+
+**Three bugs that only a second user makes visible.** `media.sha256` was globally unique, so the
+second person to photograph the same tin of beans hit `ON CONFLICT DO NOTHING`, received the
+first person's row, and had their entry stamped onto somebody else's meal. In the same function,
+`MEDIA_DIR` was flat and files were named `{file_unique_id}.jpg` — stable per file per *bot*,
+not per user — so `if path.exists()` handed the second sender the first sender's file. The bytes
+are identical so nothing leaked, but "delete everything you hold on me" would have deleted
+another person's photo. And `supersede_with_grams` loaded its entry by id with no ownership
+predicate, unlike the sibling `hard_delete_entry` which always checked; nothing was exploitable
+because every caller was already scoped, but the safety lived in the callers and the next caller
+added would not have known to keep it.
+
+That last one produced the invariant now recorded in CLAUDE.md and guarded by
+`tests/integration/test_ownership.py`: every query against a per-user table carries a `user_id`
+predicate, in the query rather than in the caller. Each case asserts both that the stranger is
+refused and that the owner's row is unchanged afterwards, because a function that returns None
+after having already written passes the first half on its own.
+
+**Prompts stopped being Turkish.** The shared perception prompt hardcoded a tea glass at 110ml,
+lahmacun as the naming example, and a list of Turkish dishes not to translate. All excellent for
+the person who eats Turkish food; noise for everyone else, since a scale reference is a ruler
+only if you own the object. Scale anchors, the naming example, the composite dish and the local
+names are now drawn from `users.cuisines`, and they live in the *user* message rather than in
+`SYSTEM` — so the system prompt stays byte-identical for everybody, which keeps it stable,
+cacheable and comparable, while `prompt_fingerprint` continues to do the job it exists for and
+now also distinguishes two users' runs. A user who has picked no cuisine gets anchors that are
+the same size everywhere: a water glass, a drinks can, a bank card.
+
+**Data rights.** `/export` and `/delete_me` exist because the moment there are two people this is
+somebody else's special-category data. Erasure leans on twelve cascades and two tables that do
+not follow, both of which were found by writing the test rather than by reading the models:
+`corrections` references `log_entries` with no `ON DELETE` clause at all, so the cascade hits a
+foreign-key violation and the whole deletion fails; and `perception_runs.entry_id` is
+`ON DELETE SET NULL`, so the raw model response — a description of what somebody ate — survives
+with its owner removed. `foods` is deliberately untouched: it is shared, and removing the tier-4
+rows written while researching one person's meal would corrupt everyone else's history, because
+macros are a cache recomputed from exactly those rows.
+
+**Two things found in passing.** `tools.latest_weight` raised `IndexError` for a user with no
+weight readings, though its return type said `| None` and every caller checked for it —
+invisible while every row was seeded with a starting weight at creation. And the test suite
+never ran the migration chain at all, because `conftest` builds its schema with `create_all`;
+that is how `users.water_target_ml` reached the models without a revision. There is now a test
+that runs `alembic upgrade head` against an empty database and asserts an empty autogenerate
+diff, and `just test` uses its own `umai_test` database rather than sharing the dev one, since
+`create_all` will not alter a table that already exists.
+
+**Still owed.** The perception prompt changed, so the 24-photo baseline in `eval/` no longer
+describes what the bot sends; `just eval` and `just perceive` have not been re-run and the
+recorded variance figures are historical until they are. `api_usage.user_id` exists as a column
+but is never written — the usage callback fires from a worker thread with no user in scope, and
+threading one through needs a context variable set by the access middleware. `perception_runs`
+has no `user_id` of its own and is reached through `media`, which is scoped. Media files written
+before the per-user directories stay where they are; nothing recomputes a path, so they keep
+working.

@@ -660,58 +660,70 @@ pleasant, stop and fix that before touching calibration.
 
 ## 14. `.env.example`
 
+The file itself is the reference and carries its own reasoning; this section
+records only what changed when the tool went multi-user and why.
+
 ```bash
 UMAI_ENV=dev                     # dev | prod
 
-# --- Telegram --------------------------------------------------------------
-# Two bots, two tokens. Telegram allows one consumer per token, so a dev
-# instance polling the production token steals messages from the real bot.
 TELEGRAM_BOT_TOKEN=              # umai_dev_bot in dev, umai_bot in prod
-TELEGRAM_ALLOWED_USER_IDS=       # your numeric id. single-user lockout
 TELEGRAM_WEBHOOK_URL=            # prod only. dev uses long polling.
 TELEGRAM_WEBHOOK_SECRET=         # prod only
 
-# --- Models ----------------------------------------------------------------
-OPENROUTER_API_KEY=
-UMAI_PROVIDER=openrouter         # read by nothing — dead template variable
+UMAI_INVITE_CODE=                # the phrase a newcomer must send; min 12 chars
+UMAI_BOOTSTRAP_ADMIN_TELEGRAM_ID=  # your id; skips the phrase, gets /users and /block
 
-# --- Database --------------------------------------------------------------
+OPENROUTER_API_KEY=
 DATABASE_URL=postgresql+asyncpg://umai:dev@localhost:5433/umai
 POSTGRES_PASSWORD=               # prod only, consumed by docker-compose.yml
 
-# --- Ingest ----------------------------------------------------------------
-HEALTH_INGEST_TOKEN=             # bearer token for Health Auto Export
+HEALTH_INGEST_TOKEN=             # legacy; read once by the multi-user migration
 MEDIA_DIR=./data/media
 UMAI_HTTP_HOST=127.0.0.1         # containers override to 0.0.0.0 in compose
+UMAI_HTTP_PORT=8000
 
-# --- Deploy ----------------------------------------------------------------
 UMAI_PI_HOST=pi                  # ssh host or tailnet name
 UMAI_IMAGE=ghcr.io/OWNER/umai:latest
 
-# --- The person ------------------------------------------------------------
-# No defaults on purpose. BMR, the safety floors and the initial expenditure
-# estimate are seeded from these, and a plausible-looking wrong default is
-# worse than a startup failure. Targets refuse to compute until they are set.
-UMAI_SEX=                        # male | female  (startup-fatal)
-UMAI_HEIGHT_CM=                  # startup-fatal
-UMAI_BIRTH_DATE=                 # YYYY-MM-DD  (startup-fatal)
-UMAI_GOAL_RATE_KG_PER_WEEK=-0.5  # negative to lose; capped at 1% body weight/wk
-UMAI_START_WEIGHT_KG=            # seeds the weight series at onboarding
-
-UMAI_CUISINES=turkish            # comma-separated cuisine slugs from core/cuisines.py
-
-# --- Locale ----------------------------------------------------------------
-# Load-bearing, not display-only: the scheduler's cron trigger reads this to
-# decide when "21:30 local" is. Unset in a container, the process is UTC and
-# the evening summary arrives at half past midnight. Storage is UTC, always.
-TZ=Europe/Istanbul
+UMAI_WATER_TARGET_ML=2500        # a system default, not somebody's body
+TZ=Europe/Istanbul               # process default only; see below
 ```
 
-`UMAI_SEX`, `UMAI_HEIGHT_CM`, and `UMAI_BIRTH_DATE` are startup-fatal: `settings.require_person()` (`settings.py:123`) raises `RuntimeError` if any is unset, and anything that computes a target calls it first (`core/tools.py:1073`). `UMAI_PROVIDER` is read by nothing — a dead template variable that can be removed.
+**The person left this file.** `UMAI_SEX`, `UMAI_HEIGHT_CM`, `UMAI_BIRTH_DATE`,
+`UMAI_GOAL_RATE_KG_PER_WEEK`, `UMAI_START_WEIGHT_KG` and `UMAI_CUISINES` are gone, along with
+`settings.require_person()`. They were copied onto every user row at creation, which meant the
+second person to use the bot inherited the first person's body: their BMR, their safety floors,
+their goal. Those are columns on `users` now and the onboarding wizard fills them in. A target
+that cannot be computed is still a loud failure, but the message points at the wizard rather than
+at an environment variable the user cannot see.
 
-`TELEGRAM_ALLOWED_USER_IDS` from the first commit. A Telegram bot is discoverable by anyone who
-guesses the username, and this is a health assistant with your data in it. One allowlist check in
-middleware, before any handler runs.
+**`TELEGRAM_ALLOWED_USER_IDS` is gone too**, replaced by `UMAI_INVITE_CODE`. The reasoning that
+put it there survives unchanged — a Telegram bot is discoverable by anyone who guesses the
+username, and this one holds health data — but an allowlist meant admitting a friend was an edit
+to this file and a restart. The phrase is never stored: the bot compares against the setting and
+no row holds a copy, so rotating it is an edit and a restart and locks out nobody already
+through, because admission is recorded on their row. Five wrong guesses blocks the guesser
+permanently, which is what keeps a twelve-character phrase sufficient; without the counter it
+would be an oracle answering several guesses a second.
+
+`UMAI_BOOTSTRAP_ADMIN_TELEGRAM_ID` is the one account that skips the phrase. Without it a fresh
+deployment has nobody who can admit anybody, including themselves. `check_startup()` refuses to
+boot without either of these two — they are the values that are invisible when wrong.
+
+**`TZ` was demoted.** It seeded every user row's timezone and decided when the evening summary
+fired. Both are per-user columns now, and the scheduler stopped reading a zone at all when it
+became an interval tick, which is what deleted `scheduling_tz` and the seven-hour
+environment-versus-row disagreement it was written to patch. What is left is log timestamps and
+the headless `tools/` scripts, which have no user to ask. The load-time validator stays: a typo
+should still not survive to become a `ZoneInfoNotFoundError` inside a script.
+
+**`HEALTH_INGEST_TOKEN` is legacy.** The multi-user migration reads it once and writes it onto
+the oldest user's row, so an already-configured phone keeps posting unchanged with no legacy
+branch in the endpoint. After that the token is per user, `/token` shows it, and this variable
+can be deleted. A shared gate in front of a per-user secret adds nothing behind `tailscale serve`
+and guarantees somebody forgets to rotate it.
+
+`UMAI_PROVIDER` is read by nothing — a dead template variable that can be removed.
 
 Sources:
 - pgvector, https://github.com/pgvector/pgvector

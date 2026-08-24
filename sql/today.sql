@@ -3,15 +3,24 @@
 -- different definitions of "today".
 --
 -- Day boundaries are the user's local midnight, not UTC midnight.
+--
+-- Multi-user: every row is labelled with the telegram id it belongs to and the
+-- results are ordered by it, so two people's data reads as two blocks rather
+-- than one blended answer. Rows without a timezone are excluded — a user who
+-- has not finished onboarding has no local day for these to be about, and
+-- `AT TIME ZONE NULL` would quietly produce nulls throughout.
 WITH bounds AS (
     SELECT
         u.id AS user_id,
+        u.telegram_id,
         u.tz,
         date_trunc('day', now() AT TIME ZONE u.tz) AT TIME ZONE u.tz             AS day_start,
         (date_trunc('day', now() AT TIME ZONE u.tz) + interval '1 day') AT TIME ZONE u.tz AS day_end
     FROM users u
+    WHERE u.tz IS NOT NULL
 )
 SELECT
+    b.telegram_id,
     b.tz,
     round(coalesce(sum(fi.kcal), 0)::numeric, 0)      AS kcal,
     round(coalesce(sum(fi.protein_g), 0)::numeric, 1) AS protein_g,
@@ -26,4 +35,5 @@ LEFT JOIN log_entries e
       AND e.superseded_by IS NULL
       AND e.kind IN ('food', 'drink')
 LEFT JOIN food_items fi ON fi.entry_id = e.id
-GROUP BY b.tz;
+GROUP BY b.telegram_id, b.tz
+ORDER BY b.telegram_id;

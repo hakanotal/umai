@@ -10,7 +10,7 @@
 
 | Question | Answer | Consequence |
 |---|---|---|
-| Who is it for | You first, others later | Single-user build, multi-user-capable schema. No auth complexity now. |
+| Who is it for | You first, others later | Multi-user since 2026-08-23: invite phrase, chat onboarding, per-user everything. See 5.4. |
 | Cuisine | Turkish and Western, home cooking and eating out | Layered food data: TurKomp for Turkish, USDA for generics, Open Food Facts for packaged. |
 | Language | English throughout | Canonical English food names with a Turkish alias array. Sources join cleanly. |
 | Eating pattern | Roughly half home-cooked, half out | Recipe engine moves into Phase 2, not Phase 3. Restaurant pre-commitment matters. |
@@ -409,7 +409,18 @@ A runnable harness for this is included alongside this plan (`eval/`).
 
 **Local vision inference on the Pi.** Rejected on benchmarks, see 2.5. Revisit for routing and classification only.
 
-**Multi-user.** Architected for, not built. Phase 5.
+**Multi-user.** Built, 2026-08-23, well ahead of the phase it was filed under. What forced it
+was not a plan but a question — whether anyone other than the author could use the tool — and
+the honest answer was no, for reasons that had nothing to do with the schema. The schema was
+right all along: UUID keys, `user_id` on twelve tables, cascades. What was single-user was
+everything around it. The person lived in environment variables and was copied onto every row
+at creation, so the second user inherited the first user's body. Five `select(User).limit(1)`
+calls decided who the scheduler summarised and whose health series an ingest payload became.
+The `job_runs` claim was keyed on `(job, day)` with no user, so exactly one person could be
+summarised per day. `media.sha256` was globally unique, so two people photographing the same
+dinner collapsed into one row. None of those is visible with one user in the database, which
+is the general lesson: a single-user deployment cannot distinguish a correct query from a
+query that happens to have only one answer.
 
 **Social, sharing, gamification.** Out of scope by design.
 
@@ -645,7 +656,14 @@ Telegram bot conversations are not end-to-end encrypted. Your meal photos and he
 
 The ingest endpoint is exposed to the internet, so it needs a strong bearer token, TLS (Cloudflare Tunnel or Tailscale Funnel avoids opening a port at all, and Tailscale is the cleaner option here), rate limiting and strict schema validation. Prefer Tailscale for the Mini App too if you never need to share it.
 
-If this ever becomes multi-user, health data is special category data under GDPR Article 9 and the compliance burden is real. Design decisions made now (local storage, export, deletion) make that path easier, but do not underestimate it.
+It is multi-user now, so health data here is special category data under GDPR Article 9 and the
+compliance burden is no longer hypothetical. What has been done: `/export` returns everything
+held on a person as JSON and CSV, `/delete_me` destroys it behind a typed confirmation, the
+foreign keys cascade so that deletion is genuinely complete, media lives in a per-user directory
+so it goes with the row, and `/start` tells a newcomer plainly that this is a private food log
+before they hand over anything. What has not: there is no retention policy, no processing
+record, and no answer for what happens to somebody's data if the operator stops running the
+bot. Those are worth settling before inviting anyone who is not family.
 
 ### 6.6 Safety rails, implemented in code rather than prompt
 
@@ -673,7 +691,9 @@ Calorie target floor at BMR, and never below approximately 1200 kcal for women o
 
 **Phase 5: Anticipation and polish (ongoing).** Calendar integration, pantry and receipt awareness, cost reporting, degraded and offline mode, local model for routing, optional Grafana.
 
-**Phase 6: Generalisation (only if warranted).** Multi-user, onboarding flow, packaged deployment, the privacy and legal work that comes with holding someone else's health data.
+**Phase 6: Generalisation (only if warranted).** Multi-user and the onboarding flow arrived
+early — see 5.4 — leaving packaged deployment and the rest of the privacy and legal work that
+comes with holding someone else's health data.
 
 ## 8. Measuring whether it works
 
@@ -699,7 +719,11 @@ The honest kill criterion: if by week eight you are not logging most days, the p
 
 **Hardware failure.** Mitigated by SSD boot and off-device encrypted backups. Assume the Pi will fail once.
 
-**Privacy exposure through Telegram.** Accepted deliberately, with mitigations above. Revisit if the tool goes multi-user, where it becomes a genuine blocker.
+**Privacy exposure through Telegram.** Accepted deliberately for the author, with the
+mitigations above. Now that other people can use the bot it is their exposure too, and they
+cannot weigh it the way the author did — so `/start` says what this is before asking for
+anything, and the invite phrase means nobody arrives here by accident. It remains the weakest
+part of the design, and the honest position is that it is accepted rather than solved.
 
 **Scope creep.** This document lists roughly forty features. Phase 1 contains six of them. That is intentional.
 

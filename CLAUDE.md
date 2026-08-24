@@ -25,11 +25,11 @@ the ignore rule is unanchored so moving the directory cannot make them committab
 ## Current state (2026-08-22)
 
 Built, lint/mypy clean, 212 tests green (unit + Postgres integration): clock, settings, full
-schema + four migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
+schema + six migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
 stage-3 compute, four food importers, trend/EWMA, safety rails, calibration, correlations,
 health ingest, `tools/simulate.py`, **and the bot stack**: `core/tools.py` (write/read paths),
-`core/agent.py`, `telegram/` (aiogram 3.30, allowlist middleware, polling), `web/api.py` (health
-ingest + webhook), `scheduler/jobs.py` (evening summary, idempotent), `analytics/charts.py`,
+`core/agent.py`, `telegram/` (aiogram 3.30, access middleware, polling), `web/api.py` (health
+ingest + webhook), `scheduler/jobs.py` (per-user tick, idempotent), `analytics/charts.py`,
 `__main__.py`, `tools/perceive.py`, `tools/seed_foods.py`. `@umai_diet_bot` is live; the foods
 table holds the 46-row hand-transcribed USDA starter set.
 
@@ -48,6 +48,24 @@ the text classifier and the enrichment job. A model reading a plate cold writes
 "flatbread with reddish meat/pepper paste topping", which matches nothing; told
 this person eats Turkish food it writes "lahmacun", which is a lookup key. Max 6,
 order-normalised on write so the prompt fingerprint stays stable.
+
+**Multi-user, since 2026-08-23.** Anyone who is given the invite phrase
+(`UMAI_INVITE_CODE`) can use the bot: `/start` asks for it, five wrong guesses
+blocks the guesser silently, and a correct one opens a seven-question chat
+wizard that fills in the timezone, sex, height, birth date, starting weight,
+goal rate and cuisines that used to come from environment variables. The wizard
+holds no FSM state — the current question is the first unset column on the row,
+so a restart resumes rather than dropping somebody into the text catch-all
+where "180" is a plausible meal.
+
+Everything downstream is per person: the evening summary and water reminders
+run on a five-minute tick that asks who has crossed their own local summary
+hour (`users.summary_hour`), the health-ingest endpoint identifies the user by
+their own bearer token (`/token`), the enrichment job researches a gap in the
+cuisines of whoever logged it, and the perception prompt's scale references and
+naming examples are drawn from the user's own kitchen rather than from Turkey.
+`/export` and `/delete_me` exist because the moment there are two people this
+is somebody else's special-category health data.
 
 **Perception is validated** (build-order step 1): all 24 `eval/photos` photos ran through the
 real path — identification excellent (Turkish dishes named), zero parse failures, zero
@@ -121,6 +139,7 @@ Everything is a `just` recipe; `just` alone lists them. `brew install just` if m
 
 ```bash
 just db                 # Postgres 17 + pgvector + pgAdmin in Docker, port 5433 (not 5432, deliberately)
+just test-db-reset      # drop the umai_test database; the next `just test` rebuilds it
 just pgadmin            # browse the data: localhost:5050, no login, server pre-registered
 just q sql/today.sql    # or run one of the ready-made queries in the terminal
 just q-check            # every sql/ query still parses against the schema
@@ -137,8 +156,11 @@ just extract-fndds      # reduce FNDDS CSV bundle into the foods table
 just perceive           # the 24-photo perception run (real API, ~$0.08)
 ```
 
-Integration tests need Postgres: `UMAI_TEST_DATABASE_URL=postgresql+asyncpg://umai:dev@localhost:5433/umai`,
-otherwise testcontainers starts one, otherwise they skip.
+Integration tests get their own database, `umai_test`, created on demand by `just test`
+(testcontainers otherwise, skip if no Docker). Deliberately not the `umai` dev database: the
+tests build their schema with `create_all`, which will not alter a table that already exists, so
+a shared database goes stale the moment a migration adds a column and the failure reads as a
+broken test. `just test-db-reset` is the fix when it does.
 
 `eval/` is a standalone harness with its own conventions, excluded from ruff. `.env` and
 `.local.env` hold real API keys — never echo their contents. The keys live in `.local.env`;
@@ -189,16 +211,47 @@ pre-declared pairings, with sample-size, effect-size and Holm-corrected signific
 `log_food_items`, where macros are computed and immutability is enforced. The raw-vs-cooked
 yield decision is made there, once, where both states are known.
 
-**The allowlist runs before any handler.** `telegram/app.py` middleware; unknown senders are
-ignored silently.
+**Access is resolved before any handler, and enforced in one place.**
+`telegram/middleware.py` resolves the sender to a row, commits, closes, and injects a frozen
+`Principal` — deliberately not holding the session across the handler, which would park a
+connection for the 17–23 seconds a photo spends in a vision model. The application sits behind
+a single `IsActive()` filter on the parent router in `handlers/__init__.py`; aiogram checks a
+router's own filters before offering an update to any sub-router, so one line gates all twelve
+feature routers. A filter per router would be twelve chances to forget, which is the one thing
+an access check may never be. `tests/unit/test_router_registration.py` closes the last hole by
+enumerating the package and insisting every `Router` appears in `GATE_ROUTERS` or `APP_ROUTERS`
+— a new feature router wired onto the top-level router would otherwise answer strangers.
+
+**Every query against a per-user table carries a `user_id` predicate.** Not "the caller checked"
+— the query itself. Entry ids reach the code through Telegram callback data, abbreviated to
+eight hex characters because callback data is capped at 64 bytes; that is a display convenience,
+not a secret. `supersede_with_grams` was the one function trusting its callers, and it was one
+new caller away from being a real hole. `tests/integration/test_ownership.py` is the guard, and
+each of its cases asserts both that the stranger is refused *and* that the owner's row is
+unchanged — a function that returns None after having already written passes the first half.
 
 **Handler include order is load-bearing.** `telegram/handlers/` is one module per feature, each
-owning a `Router`, composed in `handlers/__init__.py`. aiogram offers an update to routers in
-registration order and stops at the first match, so the order there is not alphabetical and may
-not be sorted: `menu` before `text` (a button tap must never cost a model call), `recipes` and
-`confirm` before `text` (both own an FSM state that consumes a plain message), and `text` last
-because it is the catch-all — anything after it is unreachable. Shared helpers live in
-`handlers/common.py`; a helper with one caller stays in that caller's module.
+owning a `Router`, composed in `handlers/__init__.py` as two tiers. aiogram offers an update to
+routers in registration order and stops at the first match, so the order there is not
+alphabetical and may not be sorted: the gate tier (`gate`, then `onboarding`) comes first
+because both own catch-all text handlers and a half-onboarded user's "180" is a height rather
+than a meal; within the app tier, `menu` before `text` (a button tap must never cost a model
+call), `recipes`, `confirm` and `datarights` before `text` (each owns an FSM state that consumes
+a plain message), and `text` last because it is the catch-all — anything after it is unreachable.
+Shared helpers live in `handlers/common.py`; a helper with one caller stays in that caller's
+module.
+
+**The person is a row, not an environment variable.** Timezone, sex, height, birth date, goal
+rate, starting weight and cuisines are columns on `users`, filled in by the onboarding wizard.
+They used to be env vars copied onto every row at creation, which made the second person to use
+the bot a clone of the first — their BMR, their safety floors and their local day all belonged
+to somebody else. `TZ` survives as a process default for log timestamps and the headless
+`tools/` scripts; nothing seeds from it and the scheduler does not read it.
+
+**`users.tz` is nullable, and read through `User.zone`.** A person who has just typed `/start`
+genuinely has no timezone and there is no honest default. A CHECK stops that state reaching
+`active`; the property raises rather than letting a `None` arrive at `ZoneInfo` as the string
+`"None"`.
 
 ## Model configuration
 
