@@ -84,8 +84,16 @@
   }
   .step h3{margin-bottom:10px}
   .step p{font-size:.94rem; color:var(--muted); margin:0 0 18px}
-  .chat{margin-top:auto; display:flex; flex-direction:column; gap:8px}
+  .chat{display:flex; flex-direction:column; gap:8px}
   .bub{font-size:.85rem; line-height:1.5; padding:10px 13px; border-radius:14px; max-width:88%}
+  .bub.shot{
+    align-self:flex-end; padding:4px; background:var(--cream);
+    border-radius:16px; border-bottom-right-radius:5px; line-height:0;
+  }
+  .bub.shot img{
+    display:block; width:164px; height:164px; object-fit:cover;
+    border-radius:12px; border-bottom-right-radius:4px;
+  }
   .bub.you{
     align-self:flex-end; background:var(--cream); color:var(--ink);
     border-bottom-right-radius:4px;
@@ -422,8 +430,8 @@
         <h3>Send the photo</h3>
         <p>Umai names the dish, estimates the portion, prices it in calories and macros, and asks you once to confirm.</p>
         <div class="chat">
-          <div class="bub you">📷</div>
-          <div class="bub bot">Grilled salmon, roast potatoes, green salad.<br><b>624 kcal</b> · 41 P / 52 C / 28 F<br>Right? ✅ / ✏️</div>
+          <div class="bub shot"><img src="lunch-plate.jpg" alt="A table laid with sliced beef steak on a board, roast potatoes, sautéed peppers and a tomato salad" loading="lazy" width="164" height="164"></div>
+          <div class="bub bot">Beef steak, roast potatoes, pepper sauté, tomato salad.<br><b>880 kcal</b> · 60 P / 67 C / 41 F<br>Right? ✅ / ✏️</div>
         </div>
       </div>
 
@@ -453,7 +461,8 @@
 <footer>
   <div class="wrap">
     <img class="fmark" src="umai-logo.jpg" alt="">
-    <p><strong>Umai</strong>, a self-hosted personal nutrition assistant.</p>
+    <p><strong>Umai</strong><br/>a self-hosted personal nutrition assistant<br/>2026</p>
+    <small>developed by <a href="https://github.com/hakanotal">@hakanotal</a></small>
   </div>
 </footer>
 
