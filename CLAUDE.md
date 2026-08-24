@@ -22,9 +22,9 @@ honour.
 `docs/papers/Insights.md` is empty. `docs/papers/` is gitignored (licensed PDFs, 23MB) —
 the ignore rule is unanchored so moving the directory cannot make them committable.
 
-## Current state (2026-08-22)
+## Current state (2026-08-23)
 
-Built, lint/mypy clean, 212 tests green (unit + Postgres integration): clock, settings, full
+Built, lint/mypy clean, 364 tests green (unit + Postgres integration): clock, settings, full
 schema + six migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
 stage-3 compute, four food importers, trend/EWMA, safety rails, calibration, correlations,
 health ingest, `tools/simulate.py`, **and the bot stack**: `core/tools.py` (write/read paths),
