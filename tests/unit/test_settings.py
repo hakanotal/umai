@@ -108,3 +108,35 @@ def test_a_short_invite_phrase_is_rejected_at_load():
 
 def test_a_healthy_configuration_has_no_problems():
     assert settings().check_startup() == []
+
+
+def test_a_blank_bootstrap_id_is_unset_rather_than_invalid():
+    """`.env.example` ships this key with nothing after the `=`, which is how
+    you show somebody a value they must supply. Parsing that as an integer
+    raises at import, so copying the template and filling in only half of it
+    gave a stack trace instead of the sentence check_startup exists to print."""
+    s = Settings(
+        _env_file=None,
+        TELEGRAM_BOT_TOKEN="x",
+        OPENROUTER_API_KEY="x",
+        UMAI_INVITE_CODE="correct horse battery staple",
+        UMAI_BOOTSTRAP_ADMIN_TELEGRAM_ID="",
+    )
+    assert s.bootstrap_admin_telegram_id is None
+    assert any("BOOTSTRAP_ADMIN" in p for p in s.check_startup())
+
+
+def test_the_whole_template_loads_and_says_what_is_missing():
+    """The first-run path, end to end: someone copies .env.example, fills in
+    nothing, and starts the bot. Every problem should be a sentence."""
+    import re
+    from pathlib import Path
+
+    template = Path(__file__).resolve().parents[2] / ".env.example"
+    values = dict(re.findall(r"^([A-Z_]+)=(.*)$", template.read_text(), re.M))
+    values = {k: v.split("#")[0].strip() for k, v in values.items()}
+
+    problems = Settings(_env_file=None, **values).check_startup()
+    assert {"TELEGRAM_BOT_TOKEN", "UMAI_INVITE_CODE", "OPENROUTER_API_KEY"} <= {
+        w for p in problems for w in p.split() if w.isupper()
+    }

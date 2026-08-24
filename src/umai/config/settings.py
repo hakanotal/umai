@@ -82,6 +82,21 @@ class Settings(BaseSettings):
     # filled in by the wizard.
     water_target_ml: float = Field(default=2500.0, alias="UMAI_WATER_TARGET_ML")
 
+    @field_validator("bootstrap_admin_telegram_id", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, v: object) -> object:
+        """An empty value means "not configured", not "invalid".
+
+        `.env.example` ships this key with nothing after the `=`, which is the
+        right way to show somebody a variable they have to fill in. Without
+        this, copying the template and filling in only some of it raises a
+        pydantic ValidationError at import — a stack trace instead of the
+        sentence `check_startup` was written to print.
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @field_validator("tz")
     @classmethod
     def _known_zone(cls, v: str) -> str:
