@@ -89,6 +89,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from umai.clock import Clock
 from umai.config.models import ModelClient
+from umai.core import cuisines as cuisines_mod
 from umai.core.cuisines import describe
 from umai.db.models import (
     EnrichmentAttempt,
@@ -593,6 +594,12 @@ class Gap:
     detected_name: str
     state: FoodState
     occurrences: int
+    # The traditions of the people who actually logged this name — the union,
+    # not one arbitrary user's list. It is what turns "pide" into a Turkish
+    # flatbread rather than an Italian one, and it used to come from
+    # `select(User).limit(1)`, so in a mixed household everybody's gaps were
+    # researched as though they ate whatever the oldest row ate.
+    cuisines: tuple[str, ...] = ()
 
 
 def _gaps_stmt(limit: int) -> Select[Any]:
@@ -611,6 +618,7 @@ def _gaps_stmt(limit: int) -> Select[Any]:
             FoodItem.detected_name,
             FoodItem.detected_state,
             func.count().label("occurrences"),
+            func.array_agg(func.distinct(LogEntry.user_id)).label("user_ids"),
         )
         .join(LogEntry, FoodItem.entry_id == LogEntry.id)
         .where(
@@ -629,15 +637,44 @@ def _gaps_stmt(limit: int) -> Select[Any]:
 
 
 async def pending_gaps(session: AsyncSession, limit: int = BATCH) -> list[Gap]:
+    """The gaps, each carrying the cuisines of whoever left it.
+
+    Two queries rather than one. Postgres will not aggregate a set of array
+    columns into a flat distinct set without unnesting, and doing that inside
+    the grouped gap query would obscure the frequency ordering that is the
+    whole scheduling policy. So the gap query collects user ids and a second
+    query turns them into cuisines — one round trip for the whole batch, not
+    one per gap.
+    """
     rows = (await session.execute(_gaps_stmt(limit))).all()
-    return [
-        Gap(
-            detected_name=r.detected_name,
-            state=r.detected_state or FoodState.unknown,
-            occurrences=int(r.occurrences),
+    if not rows:
+        return []
+
+    everyone = {uid for r in rows for uid in (r.user_ids or []) if uid is not None}
+    by_user: dict[Any, list[str]] = {}
+    if everyone:
+        for uid, cuisines in (
+            await session.execute(select(User.id, User.cuisines).where(User.id.in_(everyone)))
+        ).all():
+            by_user[uid] = list(cuisines or [])
+
+    gaps = []
+    for r in rows:
+        union: list[str] = []
+        for uid in r.user_ids or []:
+            union.extend(by_user.get(uid, []))
+        gaps.append(
+            Gap(
+                detected_name=r.detected_name,
+                state=r.detected_state or FoodState.unknown,
+                occurrences=int(r.occurrences),
+                # Normalised, so the prompt is stable and capped at the same
+                # limit a single user is: a model told the eater enjoys
+                # fifteen cuisines has been told nothing.
+                cuisines=tuple(cuisines_mod.normalise(union)),
+            )
         )
-        for r in rows
-    ]
+    return gaps
 
 
 # ---------------------------------------------------------------------------
@@ -1011,7 +1048,6 @@ async def enrich_once(
             return report
         try:
             gaps = await pending_gaps(session, limit)
-            cuisines = await _cuisines(session)
         finally:
             await session.execute(select(func.pg_advisory_unlock(LOCK_KEY)))
             await session.commit()
@@ -1021,7 +1057,7 @@ async def enrich_once(
         served: str | None = None
         error: str | None = None
         try:
-            candidate, served = await research(models, gap, cuisines, session_factory)
+            candidate, served = await research(models, gap, list(gap.cuisines), session_factory)
         except Rejected as exc:
             error = str(exc)
             report.rejected += 1
@@ -1049,7 +1085,7 @@ async def enrich_once(
                 session,
                 gap,
                 clock,
-                cuisines=cuisines,
+                cuisines=list(gap.cuisines),
                 food_id=food_id,
                 error=error,
                 model=served,
@@ -1057,13 +1093,6 @@ async def enrich_once(
             await session.commit()
 
     return report
-
-
-async def _cuisines(session: AsyncSession) -> list[str]:
-    """The single user's cuisines. Multi-user makes this per-gap, which needs
-    the gap query to carry a user_id; not worth the join today."""
-    user = (await session.execute(select(User).limit(1))).scalar_one_or_none()
-    return list(user.cuisines or []) if user is not None else []
 
 
 def summarise(report: EnrichmentReport) -> str:
