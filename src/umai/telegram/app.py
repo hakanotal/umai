@@ -40,6 +40,7 @@ COMMANDS = [
     BotCommand(command="cuisines", description="what you usually eat"),
     BotCommand(command="token", description="your Health Auto Export token"),
     BotCommand(command="export", description="download everything I hold on you"),
+    BotCommand(command="delete_me", description="erase my account and all my data"),
 ]
 
 

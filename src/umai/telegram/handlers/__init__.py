@@ -33,9 +33,10 @@ so:
   they cannot shadow anything for a user who is already through.
 * `menu` precedes `text` — the reply-keyboard buttons arrive as ordinary text,
   and the invariant is that a button tap never costs a model call.
-* `recipes` and `confirm` precede `text` — both own an FSM state that consumes
-  a plain message; behind the catch-all, a pending ingredient or gram answer
-  would be classified as a new meal instead.
+* `recipes`, `confirm` and `datarights` precede `text` — each owns an FSM state
+  that consumes a plain message; behind the catch-all, a pending ingredient, a
+  gram answer, or the typed word confirming an account deletion would be
+  classified as a new meal instead.
 * `text` is last, always. It is the catch-all, and anything registered after it
   is unreachable.
 
@@ -52,6 +53,7 @@ from umai.telegram.handlers import (
     commands,
     confirm,
     cuisines,
+    datarights,
     dinnerware,
     edit,
     gate,
@@ -83,6 +85,7 @@ APP_ROUTERS: tuple[Router, ...] = (
     menu.router,
     edit.router,
     confirm.router,
+    datarights.router,
     token.router,
     photo.router,
     text.router,
