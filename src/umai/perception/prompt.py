@@ -15,6 +15,9 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
+from umai.core import cuisines as cuisines_mod
+from umai.core.cuisines import describe
+
 SYSTEM = """You are a food-perception system. Your sole job is to describe what is on a \
 plate: identify each component, its cooking state, and its weight in grams.
 
@@ -32,11 +35,10 @@ For each distinct component on the plate, in a bowl, or in a glass, report:
                         composition table, and a descriptive phrase matches
                         nothing and is logged as zero calories.
 
-                        Name the dish if you recognise it. "lahmacun", not
-                        "flatbread with reddish meat and pepper paste topping".
-                        "menemen", not "scrambled eggs with tomato and pepper".
-                        A dish name is worth far more than a description of the
-                        dish, because a dish name can be looked up.
+                        Name the dish if you recognise it. A dish name is
+                        worth far more than a description of the dish, because
+                        a dish name can be looked up and a description cannot.
+                        Worked examples for this user follow below.
 
                         If you do not recognise a dish, name the principal
                         ingredient plainly: "grilled chicken breast", "white
@@ -44,9 +46,10 @@ For each distinct component on the plate, in a bowl, or in a glass, report:
                         ("white rice", not "rice") but never add where it sat,
                         what it garnished, or what colour it was.
 
-                        Use the local name for a local dish when it is the name
-                        people use — lahmacun, menemen, mercimek corbasi, pide,
-                        cacik, kisir, borek. Do not translate those.
+                        Use the local name for a local dish when it is the
+                        name people use, and do not translate it into English:
+                        the local name is the lookup key and the translation is
+                        not.
 
   description           Everything you wanted to put in the name and could not:
                         garnishes, plating, what it sat on, your uncertainty
@@ -93,16 +96,16 @@ which are the reason photo-calorie apps fail:
      Estimate it separately or fold it into the nearest component.
   4. Compacted grains. Rice, pasta and bulgur pack densely. A bowl that looks
      half full of rice holds more grams than the volume suggests.
-  5. Liquids in glasses. A standard water glass is 250-300ml; a Turkish tea
-     glass (ince belli) is about 110ml. Use the provided dinnerware dimensions
-     when available.
+  5. Liquids in glasses. Vessel sizes vary by household and by cuisine; use
+     the scale references and dinnerware dimensions given below, and when
+     neither covers what you see, say so in the confidence rather than
+     inventing a size.
 
 Report each distinct component separately, never the plate as a whole.
 "Grilled chicken (180g), salad (120g), rice (200g)" — not "a meal (500g)".
 
 A composite dish that is sold and eaten as one thing is ONE item under its own
-name, not a deconstruction of it. Lahmacun is lahmacun, not "flatbread" plus
-"minced meat" plus "parsley". Deconstruct only what is genuinely served as
+name, not a deconstruction of it. Deconstruct only what is genuinely served as
 separate components on the plate.
 
 For mixed dishes (stews, stir-fries, casseroles) where components cannot be
@@ -132,8 +135,6 @@ def build(ctx: PromptContext) -> str:
         # The cheapest accuracy available anywhere in the pipeline. A model
         # reading a plate cold describes it; a model told which tradition the
         # plate belongs to names the dish, and only a name is a lookup key.
-        from umai.core.cuisines import describe
-
         described = describe(ctx.cuisines)
         if described:
             parts.append(
@@ -143,6 +144,27 @@ def build(ctx: PromptContext) -> str:
                 "plate that is not one — a wrong dish name is worse than a plain "
                 "ingredient."
             )
+
+    # Scale anchors and the composite-dish example, both drawn from the user's
+    # own cuisines. These used to be hardcoded Turkish in the shared system
+    # prompt, which handed every user one country's crockery — a tea glass is a
+    # ruler to the household that owns one and noise to the household that does
+    # not. They live here rather than in SYSTEM so the system prompt stays
+    # identical for everybody: stable, cacheable, and comparable across users.
+    dish, deconstruction = cuisines_mod.composite_example(ctx.cuisines)
+    good, bad = cuisines_mod.dish_name_example(ctx.cuisines)
+    anchors = [
+        "Scale references:\n"
+        + "\n".join(f"  - {ref}" for ref in cuisines_mod.scale_references(ctx.cuisines)),
+        f'Naming: write "{good}", not "{bad}". The first is a lookup key; the '
+        "second matches nothing and logs as zero calories.",
+        f"{dish} is one item under its own name, not {deconstruction}.",
+    ]
+    if names := cuisines_mod.local_names(ctx.cuisines):
+        anchors.append(
+            "Do not translate local dish names into English — for example " + ", ".join(names) + "."
+        )
+    parts.append("\n\n".join(anchors))
 
     if ctx.dinnerware:
         parts.append(

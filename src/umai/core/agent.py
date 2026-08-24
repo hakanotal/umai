@@ -62,8 +62,9 @@ Classify the user's message into exactly one intent:
   other        Anything else: greetings, questions about the bot, chat.
 
 Never extract or report calories or macros. Those are computed downstream.
-Quantities may be Turkish or English (e.g. "iki yumurta", "200 gram pilav",
-"a glass of water"). A glass of water is 250ml unless stated otherwise."""
+Quantities may be written in English or in the user's own language (e.g.
+"two eggs", "200 grams of rice", "a glass of water"); the message may name
+which. A glass of water is 250ml unless stated otherwise."""
 
 INTENT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -248,7 +249,15 @@ def _cuisine_hint(user: User) -> str:
     described = cuisines_mod.describe(user.cuisines or [])
     if not described:
         return ""
-    return f"[This user mostly eats {described}. Their food names may be local.]\n"
+    hint = f"[This user mostly eats {described}. Their food names may be local."
+    # The phrasings they are likely to type quantities in. This used to be
+    # hardcoded Turkish in the shared system prompt — "iki yumurta", "200 gram
+    # pilav" — which taught every user's classifier one language regardless of
+    # whose messages it was reading.
+    examples = cuisines_mod.quantity_examples(user.cuisines or [])
+    if examples:
+        hint += " Quantities may look like: " + ", ".join(f'"{e}"' for e in examples) + "."
+    return hint + "]\n"
 
 
 async def _log_weight(session: AsyncSession, user: User, clock: Clock, kg: float) -> str:
