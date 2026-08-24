@@ -21,7 +21,6 @@ from umai.clock import FakeClock
 from umai.core import datarights, tools
 from umai.db.models import (
     Correction,
-    EntryKind,
     EntrySource,
     Food,
     FoodItem,
@@ -79,14 +78,8 @@ async def _populate(session, user) -> dict:
     )
     await tools.remember(session, user.id, meal)
     await tools.add_dinnerware(session, user.id, "plate", "26 cm")
-    await tools.log_simple(
-        session,
-        user.id,
-        kind=EntryKind.weight,
-        value=88.0,
-        unit="kg",
-        occurred_at=CLOCK.now(),
-        source=EntrySource.manual,
+    await tools.log_weight(
+        session, user, kg=88.0, occurred_at=CLOCK.now(), source=EntrySource.manual
     )
     session.add(
         HealthMetric(

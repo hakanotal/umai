@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from umai.analytics import safety
-from umai.clock import Clock, day_bounds, today
+from umai.clock import Clock, day_bounds, local_date, today
 from umai.config.settings import Settings
 from umai.db.models import (
     Correction,
@@ -826,9 +826,13 @@ async def edit_water(
 # ---------------------------------------------------------------------------
 
 
+# Weight is deliberately absent: it goes through `log_weight`, which keeps one
+# live reading per local day. Water accumulates across a day and supplements
+# and moods are events, so appending is right for those; a body weight is a
+# measurement with one true answer per morning, and a second one is a
+# correction rather than a second fact.
 _SIMPLE_KINDS = (
     EntryKind.water,
-    EntryKind.weight,
     EntryKind.supplement,
     EntryKind.mood,
     EntryKind.satiety,
@@ -845,10 +849,13 @@ async def log_simple(
     occurred_at: dt.datetime,
     source: EntrySource = EntrySource.button,
 ) -> LogEntry:
+    if kind == EntryKind.weight:
+        raise ValueError(
+            "weight goes through log_weight, which keeps one live reading per "
+            "local day; log_simple would append a second one"
+        )
     if kind not in _SIMPLE_KINDS:
         raise ValueError(f"log_simple is for value-carrying kinds, not {kind}")
-    if kind == EntryKind.weight and not safety.is_plausible_weight(value):
-        raise ValueError(f"{value} kg is not a plausible body weight")
     entry = LogEntry(
         user_id=user_id,
         occurred_at=occurred_at,
@@ -860,6 +867,91 @@ async def log_simple(
     session.add(entry)
     await session.flush()
     return entry
+
+
+async def log_weight(
+    session: AsyncSession,
+    user: User,
+    *,
+    kg: float,
+    occurred_at: dt.datetime,
+    source: EntrySource = EntrySource.button,
+) -> tuple[LogEntry, float | None]:
+    """One live weigh-in per local day. A second one corrects the first.
+
+    Body weight is a *measurement*, not an event: there is one true answer for a
+    given morning, and a second reading on the same day is almost always someone
+    fixing a typo — 88 for 89, a stone entered as kilos, a stray digit. Keeping
+    both is wrong in a way that compounds:
+
+      * `previous_weight` feeds the "↓ 0.3 vs last" line under a weigh-in, so
+        after a correction it compared against the typo the user had just
+        replaced, seconds earlier, rather than against yesterday.
+      * the trend is an EWMA over the series and calibration fits against it, so
+        a duplicated day is a day with double the weight in the fit — and a
+        mistyped one that is never removed biases it permanently.
+
+    **A correction supersedes, it does not overwrite.** Entries are immutable;
+    the old row stays, gains a `superseded_by` pointing at the replacement, and
+    a `corrections` row records what changed. That is the same mechanism a gram
+    fix uses, and it is what keeps "why is my target this number" answerable
+    months later.
+
+    Scoped to the user's *local* day, not to 24 hours: weighing at 07:00 on
+    Tuesday and 23:00 on Tuesday is one day's measurement corrected, while 23:00
+    Tuesday and 07:00 Wednesday is two days' data.
+
+    Returns the new entry and the value it replaced, if any, so the caller can
+    say "corrected from 89.9" rather than pretending nothing was there.
+    """
+    if not safety.is_plausible_weight(kg):
+        raise ValueError(f"{kg} kg is not a plausible body weight")
+
+    day = local_date(occurred_at, user.zone)
+    start, end = day_bounds(day, user.zone)
+    existing = (
+        (
+            await session.execute(
+                select(LogEntry)
+                .where(
+                    LogEntry.user_id == user.id,
+                    LogEntry.kind == EntryKind.weight,
+                    LogEntry.superseded_by.is_(None),
+                    LogEntry.occurred_at >= start,
+                    LogEntry.occurred_at < end,
+                )
+                .order_by(LogEntry.occurred_at.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    entry = LogEntry(
+        user_id=user.id,
+        occurred_at=occurred_at,
+        kind=EntryKind.weight,
+        source=source,
+        value=kg,
+        unit="kg",
+    )
+    session.add(entry)
+    await session.flush()
+
+    replaced: float | None = None
+    if existing is not None:
+        replaced = float(existing.value) if existing.value is not None else None
+        existing.superseded_by = entry.id
+        session.add(
+            Correction(
+                entry_id=existing.id,
+                field="weight_kg",
+                old_value=str(replaced),
+                new_value=str(kg),
+            )
+        )
+        await session.flush()
+    return entry, replaced
 
 
 # ---------------------------------------------------------------------------

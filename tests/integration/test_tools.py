@@ -262,15 +262,7 @@ async def test_water_and_weight_round_trip(session, user):
         unit="ml",
         occurred_at=CLOCK.now(),
     )
-    await tools.log_simple(
-        session,
-        user.id,
-        kind=EntryKind.weight,
-        value=88.4,
-        unit="kg",
-        occurred_at=CLOCK.now(),
-        source="button",
-    )
+    await tools.log_weight(session, user, kg=88.4, occurred_at=CLOCK.now())
     totals = await tools.day_totals(session, user, CLOCK)
     assert totals.water_ml == 250.0
     assert await tools.latest_weight(session, user.id) == pytest.approx(88.4)
@@ -278,11 +270,19 @@ async def test_water_and_weight_round_trip(session, user):
 
 async def test_an_implausible_weight_is_refused(session, user):
     with pytest.raises(ValueError, match="plausible"):
+        await tools.log_weight(session, user, kg=900, occurred_at=CLOCK.now())
+
+
+async def test_log_simple_refuses_weight(session, user):
+    """Weight has one true answer per morning, so a second one is a correction
+    rather than a second fact. log_simple appends, which is right for water and
+    wrong here — so it refuses rather than leaving the rule to whoever calls."""
+    with pytest.raises(ValueError, match="log_weight"):
         await tools.log_simple(
             session,
             user.id,
             kind=EntryKind.weight,
-            value=900,
+            value=88.0,
             unit="kg",
             occurred_at=CLOCK.now(),
         )

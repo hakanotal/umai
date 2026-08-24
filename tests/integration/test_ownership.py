@@ -26,7 +26,6 @@ from sqlalchemy import func, select
 from umai.clock import FakeClock
 from umai.core import tools
 from umai.db.models import (
-    EntryKind,
     EntrySource,
     Food,
     FoodItem,
@@ -178,14 +177,8 @@ async def test_day_totals_count_only_the_users_own_entries(session, user, other_
 
 
 async def test_weights_do_not_bleed_between_users(session, user, other_user):
-    await tools.log_simple(
-        session,
-        user.id,
-        kind=EntryKind.weight,
-        value=88.0,
-        unit="kg",
-        occurred_at=CLOCK.now(),
-        source=EntrySource.manual,
+    await tools.log_weight(
+        session, user, kg=88.0, occurred_at=CLOCK.now(), source=EntrySource.manual
     )
     assert await tools.latest_weight(session, user.id) == 88.0
     assert await tools.latest_weight(session, other_user.id) is None

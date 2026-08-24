@@ -263,16 +263,26 @@ def _cuisine_hint(user: User) -> str:
 async def _log_weight(session: AsyncSession, user: User, clock: Clock, kg: float) -> str:
     if not safety.is_plausible_weight(kg):
         return f"{kg} doesn't look like a body weight. If you meant it, send 'weighed {kg} kg'."
-    await tools.log_simple(
-        session,
-        user.id,
-        kind=EntryKind.weight,
-        value=kg,
-        unit="kg",
-        occurred_at=clock.now(),
-        source=EntrySource.text,
+
+    # Read before the write, and `latest_weight` rather than `previous_weight`.
+    # Both halves matter. Reading after the write meant that on a second
+    # weigh-in the same day the arrow compared against the reading being
+    # corrected — the user's own typo from seconds earlier. And once the read
+    # moves ahead of the write, "the last reading" is the latest existing row;
+    # `previous_weight` would skip one back and compare against the day before
+    # that, or return None when there is only one prior reading.
+    previous = await tools.latest_weight(session, user.id)
+    _, replaced = await tools.log_weight(
+        session, user, kg=kg, occurred_at=clock.now(), source=EntrySource.text
     )
-    previous = await tools.previous_weight(session, user.id)
+
+    if replaced is not None:
+        # Say what happened. Silently discarding the earlier number would leave
+        # somebody who fixed a typo unsure whether the fix took.
+        if abs(replaced - kg) < 0.05:
+            return f"Logged {kg:.1f} kg (today's weigh-in was already {replaced:.1f})"
+        return f"Updated today's weigh-in: {replaced:.1f} → {kg:.1f} kg"
+
     if previous is not None:
         delta = kg - previous
         arrow = "↓" if delta < 0 else ("↑" if delta > 0 else "→")

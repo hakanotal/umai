@@ -79,17 +79,14 @@ async def number_received(
                     f"{value} doesn't look like a body weight. Try again, or send something else."
                 )
                 return
-            await tools.log_simple(
-                session,
-                user.id,
-                kind=EntryKind.weight,
-                value=value,
-                unit="kg",
-                occurred_at=clock.now(),
-                source=EntrySource.button,
+            _, replaced = await tools.log_weight(
+                session, user, kg=value, occurred_at=clock.now(), source=EntrySource.button
             )
             await state.clear()
-            await message.answer(f"Logged {value:.1f} kg ⚖️")
+            if replaced is not None and abs(replaced - value) >= 0.05:
+                await message.answer(f"Updated today's weigh-in: {replaced:.1f} → {value:.1f} kg ⚖️")
+            else:
+                await message.answer(f"Logged {value:.1f} kg ⚖️")
             return
 
         if data.get("mode") == "water_edit":

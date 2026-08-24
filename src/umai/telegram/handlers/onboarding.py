@@ -33,7 +33,7 @@ from umai.clock import Clock
 from umai.core import cuisines as cuisines_mod
 from umai.core import onboarding as ob
 from umai.core import tokens, tools
-from umai.db.models import EntryKind, EntrySource, User, UserStatus
+from umai.db.models import EntrySource, User, UserStatus
 from umai.db.session import session_scope
 from umai.telegram import keyboards
 from umai.telegram.filters import NeedsGate
@@ -109,14 +109,11 @@ async def _finish(session: AsyncSession, user: User, clock: Clock) -> None:
     """
     weight = getattr(user, WEIGHT_ATTR, None)
     if weight is not None:
-        await tools.log_simple(
-            session,
-            user.id,
-            kind=EntryKind.weight,
-            value=float(weight),
-            unit="kg",
-            occurred_at=clock.now(),
-            source=EntrySource.manual,
+        # Through log_weight like every other weigh-in, so that somebody who
+        # re-runs onboarding on the same day corrects their reading rather than
+        # planting a second one.
+        await tools.log_weight(
+            session, user, kg=float(weight), occurred_at=clock.now(), source=EntrySource.manual
         )
     if not user.health_token:
         user.health_token = tokens.new_token()

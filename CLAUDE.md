@@ -200,6 +200,14 @@ Tier 4 is provisional and never silently fact.
 **Entries are immutable.** A correction is a new row referencing the original (`superseded_by`),
 plus a `corrections` row recording the change.
 
+**One live weigh-in per local day** (`tools.log_weight`; `log_simple` refuses `EntryKind.weight`).
+Body weight is a measurement with one true answer per morning, not an event, so a second reading
+the same day is a typo being fixed and supersedes the first. Keeping both compounded: the
+"↓ 0.3 vs last" line compared against the reading just replaced, and the EWMA the calibration
+engine fits gave a duplicated day double weight while a mistyped one biased it permanently.
+Water accumulates and stays on `log_simple`; the day is the user's local day, so 23:00 Tuesday
+and 07:00 Wednesday are two measurements rather than one corrected.
+
 **Safety rails live in code, not prompts** (`analytics/safety.py`): floor at BMR and never below
 ~1200/1500 kcal, max ~1% body weight loss per week, protein floor in deficit.
 
