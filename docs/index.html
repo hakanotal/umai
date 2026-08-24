@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Umai — the nutrition coach that lives in your chat</title>
-<meta name="description" content="Umai is a self-hosted personal nutrition assistant on Telegram. Photograph a meal, get it logged. Calories, macros, water, weight and steps — tracked without the data entry.">
-<meta property="og:title" content="Umai — the nutrition coach that lives in your chat">
-<meta property="og:description" content="Photograph a meal, get it logged. Calories, macros, water, weight and steps — tracked without the data entry.">
+<title>Umai, the nutrition coach that lives in your chat</title>
+<meta name="description" content="Umai is a self-hosted personal nutrition assistant on Telegram. Photograph a meal, get it logged. Calories, macros, water, weight and steps, tracked without the data entry.">
+<meta property="og:title" content="Umai, the nutrition coach that lives in your chat">
+<meta property="og:description" content="Photograph a meal, get it logged. Calories, macros, water, weight and steps, tracked without the data entry.">
 <meta property="og:image" content="umai-logo.jpg">
 <link rel="icon" href="umai-logo.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -56,7 +56,7 @@
   .section-head{max-width:64ch; margin-bottom:52px}
   .section-head p{margin-top:16px}
 
-  /* ── hero ───────────────────────────────────────────── */
+  /* hero */
   header.hero{padding:76px 0 84px; text-align:center}
   .mark{
     width:112px; height:112px; margin:0 auto 26px; display:block;
@@ -66,37 +66,26 @@
   header.hero h1{margin-bottom:20px}
   header.hero h1 em{font-style:italic; color:var(--green-soft)}
   header.hero .lede{margin:0 auto}
-  .hero-tags{
-    display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:34px;
-  }
-  .tag{
-    font-size:.78rem; font-weight:500; letter-spacing:.02em;
-    padding:6px 14px; border-radius:100px;
-    background:var(--cream-dim); color:var(--green); border:1px solid var(--line);
-  }
 
-  /* ── the day timeline ───────────────────────────────── */
-  .day{display:grid; gap:22px; grid-template-columns:repeat(4,1fr)}
+  /* the day, a 2x2 grid */
+  .day{display:grid; gap:24px; grid-template-columns:repeat(2,1fr)}
   .step{
     background:#fff; border:1px solid var(--line); border-radius:16px;
-    padding:22px 20px 24px; box-shadow:var(--shadow);
+    padding:26px 26px 28px; box-shadow:var(--shadow);
     display:flex; flex-direction:column;
   }
+  .step .head{display:flex; align-items:baseline; gap:14px; margin-bottom:12px}
   .step .no{
-    font-family:var(--serif); font-size:1.6rem; color:var(--gold);
-    line-height:1; margin-bottom:10px;
+    font-family:var(--serif); font-size:1.7rem; color:var(--gold); line-height:1;
   }
   .step .when{
     font-size:.72rem; font-weight:600; letter-spacing:.12em;
-    text-transform:uppercase; color:var(--muted); margin-bottom:6px;
+    text-transform:uppercase; color:var(--muted);
   }
   .step h3{margin-bottom:10px}
-  .step p{font-size:.92rem; color:var(--muted); margin:0 0 16px}
-  .chat{margin-top:auto; display:flex; flex-direction:column; gap:7px}
-  .bub{
-    font-size:.82rem; line-height:1.5; padding:9px 12px; border-radius:13px;
-    max-width:94%;
-  }
+  .step p{font-size:.94rem; color:var(--muted); margin:0 0 18px}
+  .chat{margin-top:auto; display:flex; flex-direction:column; gap:8px}
+  .bub{font-size:.85rem; line-height:1.5; padding:10px 13px; border-radius:14px; max-width:88%}
   .bub.you{
     align-self:flex-end; background:var(--cream); color:var(--ink);
     border-bottom-right-radius:4px;
@@ -107,7 +96,13 @@
   }
   .bub.bot b{color:#fff; font-weight:600}
 
-  /* ── tracking grid ──────────────────────────────────── */
+  /* tracking grid */
+  .subhead{
+    margin:56px 0 26px; padding-top:34px; border-top:1px solid var(--line);
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;
+  }
+  .subhead h3{font-size:1.5rem}
+  .subhead span{font-size:.95rem; color:var(--muted)}
   .grid3{
     display:grid; gap:1px; background:var(--line);
     border:1px solid var(--line); border-radius:16px; overflow:hidden;
@@ -118,7 +113,7 @@
   .cell h3{font-size:1.08rem; margin-bottom:8px}
   .cell p{font-size:.9rem; color:var(--muted); margin:0}
 
-  /* ── figures ────────────────────────────────────────── */
+  /* figures */
   figure{margin:0}
   .figbox{
     background:#fff; border:1px solid var(--line); border-radius:18px;
@@ -130,26 +125,14 @@
   .svg-sub{font-family:"Inter",sans-serif; font-size:11px; fill:#6E7A6E}
   .svg-cap{font-family:"Inter",sans-serif; font-size:9.5px; font-weight:600; letter-spacing:.1em; fill:#B8862B}
 
-  /* ── principles ─────────────────────────────────────── */
+  /* principles */
   .rules{display:grid; gap:26px 40px; grid-template-columns:repeat(2,1fr)}
   .rule{padding-left:20px; border-left:2px solid var(--sage)}
   .rule h3{font-size:1.08rem; margin-bottom:8px}
   .rule p{font-size:.92rem; color:var(--muted); margin:0}
   .rule code{font-size:.85em; color:var(--green)}
 
-  /* ── commands ───────────────────────────────────────── */
-  .cmds{display:grid; gap:0 40px; grid-template-columns:repeat(2,1fr)}
-  .cmd{
-    display:flex; gap:14px; align-items:baseline;
-    padding:11px 0; border-bottom:1px dotted var(--line);
-  }
-  .cmd code{
-    font-size:.85rem; color:var(--green); background:var(--cream-dim);
-    padding:3px 8px; border-radius:6px; white-space:nowrap;
-  }
-  .cmd span{font-size:.9rem; color:var(--muted)}
-
-  /* ── footer ─────────────────────────────────────────── */
+  /* footer */
   footer{
     padding:70px 0 80px; border-top:1px solid var(--line);
     text-align:center; color:var(--muted); font-size:.88rem;
@@ -158,7 +141,6 @@
   footer p{margin:0 0 8px}
 
   @media (max-width:900px){
-    .day{grid-template-columns:repeat(2,1fr)}
     .grid3{grid-template-columns:repeat(2,1fr)}
   }
   @media (max-width:620px){
@@ -166,97 +148,101 @@
     .day{grid-template-columns:1fr}
     .grid3{grid-template-columns:1fr}
     .rules{grid-template-columns:1fr}
-    .cmds{grid-template-columns:1fr}
     .figbox{padding:22px 14px}
   }
 </style>
 </head>
 <body>
 
-<!-- ══ HERO ══════════════════════════════════════════ -->
+<!-- HERO -->
 <header class="hero">
   <div class="wrap">
     <img class="mark" src="umai-logo.jpg" alt="Umai logo">
     <h1>Eat. Photograph.<br><em>That is the whole workflow.</em></h1>
     <p class="lede">Umai is a self-hosted nutrition coach that lives in your Telegram chat. It reads your plate, does the arithmetic in code, and tells you at the end of the day whether you are on track.</p>
-    <div class="hero-tags">
-      <span class="tag">📷 Photo-first logging</span>
-      <span class="tag">🔒 Your own server</span>
-      <span class="tag">🍲 Knows your cuisine</span>
-      <span class="tag">📈 Learns your bias</span>
-    </div>
   </div>
 </header>
 
-<!-- ══ A DAY WITH UMAI ═══════════════════════════════ -->
+<!-- ONE CHAT: USE CASES AND TRACKING -->
 <section>
   <div class="wrap">
     <div class="section-head">
-      <p class="eyebrow">A day with Umai</p>
-      <h2>Four moments, none of them data entry</h2>
-      <p class="lede">No forms, no barcode hunting, no scrolling a database of nine hundred kinds of yoghurt. You already take photos of your food.</p>
+      <p class="eyebrow">What you do, what it keeps</p>
+      <h2>One chat, eight jobs</h2>
+      <p class="lede">Everything happens in the same conversation. There is no app to open and no dashboard you have to remember to visit. Eight things you can do, and six things Umai quietly keeps track of while you do them.</p>
     </div>
 
-    <div class="day">
-      <div class="step">
-        <div class="no">01</div>
-        <div class="when">Morning</div>
-        <h3>Weigh in</h3>
-        <p>One tap, one number. Umai keeps a single weight per day and smooths the noise into a trend you can actually read.</p>
-        <div class="chat">
-          <div class="bub you">⚖️ 78.4</div>
-          <div class="bub bot">Logged. Trend <b>78.9 kg</b>, ↓ 0.4 this week.</div>
-        </div>
-      </div>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 900 410" role="img" aria-label="Hub and spoke diagram. The Umai chat sits at the centre, surrounded by eight use cases: log a meal, log water, weigh in, re-log a favourite, save a recipe, fix a mistake, review today and the week, and own your data.">
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#BFCBB8"/>
+            </marker>
+          </defs>
 
-      <div class="step">
-        <div class="no">02</div>
-        <div class="when">Lunch</div>
-        <h3>Send the photo</h3>
-        <p>Umai names the dish, estimates the portion, prices it in calories and macros, and asks you once to confirm.</p>
-        <div class="chat">
-          <div class="bub you">📷</div>
-          <div class="bub bot">Lahmacun ×2, ayran 200 ml.<br><b>648 kcal</b> · 31 P / 78 C / 22 F<br>Right? ✅ / ✏️</div>
-        </div>
-      </div>
+          <g stroke="#BFCBB8" stroke-width="1.6" marker-end="url(#ar2)">
+            <line x1="396" y1="181" x2="266" y2="98"/>
+            <line x1="450" y1="167" x2="450" y2="80"/>
+            <line x1="504" y1="181" x2="634" y2="98"/>
+            <line x1="528" y1="205" x2="694" y2="205"/>
+            <line x1="504" y1="229" x2="634" y2="312"/>
+            <line x1="450" y1="243" x2="450" y2="330"/>
+            <line x1="396" y1="229" x2="266" y2="312"/>
+            <line x1="372" y1="205" x2="206" y2="205"/>
+          </g>
 
-      <div class="step">
-        <div class="no">03</div>
-        <div class="when">Afternoon</div>
-        <h3>Tap the small stuff</h3>
-        <p>Water is one button. Repeat foods come from your library. Typing works too — plain words, no syntax to learn.</p>
-        <div class="chat">
-          <div class="bub you">a coffee and 200g rice</div>
-          <div class="bub bot">Logged. <b>1 042 kcal</b> left today.</div>
-        </div>
-      </div>
+          <circle cx="450" cy="205" r="74" fill="#2F5741"/>
+          <text x="450" y="196" text-anchor="middle" style="font-family:Inter,sans-serif;font-size:16px;font-weight:600;fill:#FFFFFF">Umai</text>
+          <text class="svg-sub" x="450" y="216" text-anchor="middle" style="fill:#C9D6C6">your Telegram</text>
+          <text class="svg-sub" x="450" y="231" text-anchor="middle" style="fill:#C9D6C6">chat</text>
 
-      <div class="step">
-        <div class="no">04</div>
-        <div class="when">Evening</div>
-        <h3>Get the verdict</h3>
-        <p>At your own local hour, unprompted: the day totalled, weighed against your target, with what it means for tomorrow.</p>
-        <div class="chat">
-          <div class="bub bot"><b>1 940 / 2 050 kcal</b><br>Protein 118 g ✅ · Water 2.1 L<br>8 430 steps · on track.</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+          <rect x="112" y="42" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="128" y="67">📷 Log a meal</text>
+          <text class="svg-sub" x="128" y="85">a photo, or plain words</text>
 
-<!-- ══ WHAT IT TRACKS ════════════════════════════════ -->
-<section>
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">What it tracks</p>
-      <h2>Everything that moves the number</h2>
+          <rect x="372" y="22" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="388" y="47">💧 Log water</text>
+          <text class="svg-sub" x="388" y="65">one tap, 250 ml</text>
+
+          <rect x="632" y="42" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="648" y="67">⚖️ Weigh in</text>
+          <text class="svg-sub" x="648" y="85">one number a day</text>
+
+          <rect x="692" y="176" width="190" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="708" y="201">📚 Re-log a favourite</text>
+          <text class="svg-sub" x="708" y="219">from your food library</text>
+
+          <rect x="632" y="310" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="648" y="335">📝 Save a recipe</text>
+          <text class="svg-sub" x="648" y="353">weighed once, reused</text>
+
+          <rect x="372" y="330" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="388" y="355">✏️ Fix a mistake</text>
+          <text class="svg-sub" x="388" y="373">the grams or the item</text>
+
+          <rect x="112" y="310" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="128" y="335">📊 Review</text>
+          <text class="svg-sub" x="128" y="353">today · week · trend</text>
+
+          <rect x="18" y="176" width="190" height="58" rx="10" fill="#EDE6C8" stroke="#DDD8C2"/>
+          <text class="svg-lbl" x="34" y="201">🔒 Own your data</text>
+          <text class="svg-sub" x="34" y="219">export it, or delete all of it</text>
+        </svg>
+      </div>
+      <figcaption>Buttons cover the frequent paths, so the things you do every day never cost a model call, or a wait.</figcaption>
+    </figure>
+
+    <div class="subhead">
+      <h3>What it keeps track of</h3>
+      <span>everything that moves the number, and nothing that does not</span>
     </div>
 
     <div class="grid3">
       <div class="cell">
         <span class="ico">🔥</span>
         <h3>Calories &amp; macros</h3>
-        <p>Protein, carbs and fat per item, per meal, per day — computed from a real food table, never invented by a model.</p>
+        <p>Protein, carbs and fat per item, per meal, per day, computed from a real food table rather than invented by a model.</p>
       </div>
       <div class="cell">
         <span class="ico">⚖️</span>
@@ -271,7 +257,7 @@
       <div class="cell">
         <span class="ico">👟</span>
         <h3>Steps</h3>
-        <p>Synced from your phone and shown <em>beside</em> the target — activity never quietly buys calories back.</p>
+        <p>Synced from your phone and shown <em>beside</em> the target, because activity never quietly buys calories back.</p>
       </div>
       <div class="cell">
         <span class="ico">🎯</span>
@@ -287,13 +273,13 @@
   </div>
 </section>
 
-<!-- ══ HOW IT WORKS ══════════════════════════════════ -->
+<!-- HOW IT WORKS -->
 <section>
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">How it works</p>
       <h2>The model looks. The code counts.</h2>
-      <p class="lede">A vision model is superb at recognising a plate and dreadful at arithmetic. So Umai splits the job in four: the model only ever returns <em>what</em> and <em>how much</em>, and every calorie figure is computed afterwards in ordinary code.</p>
+      <p class="lede">A vision model is superb at recognising a plate and dreadful at arithmetic. So Umai splits the job in four. The model only ever returns <em>what</em> and <em>how much</em>, and every calorie figure is computed afterwards in ordinary code.</p>
     </div>
 
     <figure>
@@ -355,17 +341,17 @@
           <text class="svg-sub" x="832" y="159" style="fill:#C9D6C6">one tap ✅</text>
           <text class="svg-sub" x="832" y="175" style="fill:#C9D6C6">or fix an item</text>
 
-          <!-- store -->
+          <!-- store and read -->
           <line x1="874" y1="204" x2="874" y2="240" stroke="#7C9A5B" stroke-width="2" marker-end="url(#ar)"/>
           <rect x="612" y="244" width="320" height="72" rx="12" fill="#EDE6C8" stroke="#DDD8C2"/>
           <text class="svg-lbl" x="628" y="269">🗄️ Stored on your own machine</text>
-          <text class="svg-sub" x="628" y="288">entries are immutable — a fix is a new row,</text>
+          <text class="svg-sub" x="628" y="288">entries are immutable, a fix is a new row,</text>
           <text class="svg-sub" x="628" y="303">so the history stays true</text>
 
           <line x1="608" y1="280" x2="564" y2="280" stroke="#7C9A5B" stroke-width="2" marker-end="url(#ar)"/>
           <rect x="180" y="244" width="380" height="72" rx="12" fill="#FCFBF6" stroke="#2F5741" stroke-width="1.5"/>
           <text class="svg-lbl" x="196" y="269">📊 Today · Week · the evening summary · your target</text>
-          <text class="svg-sub" x="196" y="288">statistics computed in code —</text>
+          <text class="svg-sub" x="196" y="288">statistics computed in code,</text>
           <text class="svg-sub" x="196" y="303">the model only writes the sentence</text>
         </svg>
       </div>
@@ -374,79 +360,7 @@
   </div>
 </section>
 
-<!-- ══ USE CASES ═════════════════════════════════════ -->
-<section>
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Use cases</p>
-      <h2>One chat, eight jobs</h2>
-      <p class="lede">Everything happens in the same conversation. There is no app to open and no dashboard you have to remember to visit.</p>
-    </div>
-
-    <figure>
-      <div class="figbox">
-        <svg viewBox="0 0 900 410" role="img" aria-label="Hub and spoke diagram. The Umai chat sits at the centre, surrounded by eight use cases: log a meal, log water, weigh in, re-log a favourite, save a recipe, fix a mistake, review today and the week, and own your data.">
-          <defs>
-            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0 0 L10 5 L0 10 z" fill="#BFCBB8"/>
-            </marker>
-          </defs>
-
-          <g stroke="#BFCBB8" stroke-width="1.6" marker-end="url(#ar2)">
-            <line x1="396" y1="181" x2="266" y2="98"/>
-            <line x1="450" y1="167" x2="450" y2="80"/>
-            <line x1="504" y1="181" x2="634" y2="98"/>
-            <line x1="528" y1="205" x2="694" y2="205"/>
-            <line x1="504" y1="229" x2="634" y2="312"/>
-            <line x1="450" y1="243" x2="450" y2="330"/>
-            <line x1="396" y1="229" x2="266" y2="312"/>
-            <line x1="372" y1="205" x2="206" y2="205"/>
-          </g>
-
-          <circle cx="450" cy="205" r="74" fill="#2F5741"/>
-          <text x="450" y="196" text-anchor="middle" style="font-family:Inter,sans-serif;font-size:16px;font-weight:600;fill:#FFFFFF">Umai</text>
-          <text class="svg-sub" x="450" y="216" text-anchor="middle" style="fill:#C9D6C6">your Telegram</text>
-          <text class="svg-sub" x="450" y="231" text-anchor="middle" style="fill:#C9D6C6">chat</text>
-
-          <rect x="112" y="42" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="128" y="67">📷 Log a meal</text>
-          <text class="svg-sub" x="128" y="85">a photo, or plain words</text>
-
-          <rect x="372" y="22" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="388" y="47">💧 Log water</text>
-          <text class="svg-sub" x="388" y="65">one tap, 250 ml</text>
-
-          <rect x="632" y="42" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="648" y="67">⚖️ Weigh in</text>
-          <text class="svg-sub" x="648" y="85">one number a day</text>
-
-          <rect x="692" y="176" width="190" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="708" y="201">📚 Re-log a favourite</text>
-          <text class="svg-sub" x="708" y="219">from your food library</text>
-
-          <rect x="632" y="310" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="648" y="335">📝 Save a recipe</text>
-          <text class="svg-sub" x="648" y="353">weighed once, reused</text>
-
-          <rect x="372" y="330" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="388" y="355">✏️ Fix a mistake</text>
-          <text class="svg-sub" x="388" y="373">the grams or the item</text>
-
-          <rect x="112" y="310" width="156" height="58" rx="10" fill="#FCFBF6" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="128" y="335">📊 Review</text>
-          <text class="svg-sub" x="128" y="353">today · week · trend</text>
-
-          <rect x="18" y="176" width="190" height="58" rx="10" fill="#EDE6C8" stroke="#DDD8C2"/>
-          <text class="svg-lbl" x="34" y="201">🔒 Own your data</text>
-          <text class="svg-sub" x="34" y="219">export it, or delete all of it</text>
-        </svg>
-      </div>
-      <figcaption>Buttons cover the frequent paths, so the things you do every day never cost a model call — or a wait.</figcaption>
-    </figure>
-  </div>
-</section>
-
-<!-- ══ PRINCIPLES ════════════════════════════════════ -->
+<!-- PRINCIPLES -->
 <section>
   <div class="wrap">
     <div class="section-head">
@@ -465,7 +379,7 @@
       </div>
       <div class="rule">
         <h3>It learns your kitchen</h3>
-        <p>Tell it which cuisines you eat and a plate stops being "flatbread with a reddish topping" and becomes lahmacun — a name that actually matches a food row.</p>
+        <p>Tell it which cuisines you eat and a plate stops being "baked pasta with a reddish sauce" and becomes lasagne, a name that actually matches a food row.</p>
       </div>
       <div class="rule">
         <h3>Fixes reach backwards</h3>
@@ -477,44 +391,69 @@
       </div>
       <div class="rule">
         <h3>It is your server</h3>
-        <p>Umai runs on hardware you own — a Raspberry Pi is plenty. Your meals, weight and photos stay there, and <code>/export</code> and <code>/delete_me</code> do exactly what they say.</p>
+        <p>Umai runs on hardware you own, and a Raspberry Pi is plenty. Your meals, weight and photos stay there, and <code>/export</code> and <code>/delete_me</code> do exactly what they say.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ══ COMMANDS ══════════════════════════════════════ -->
+<!-- A DAY WITH UMAI -->
 <section>
   <div class="wrap">
     <div class="section-head">
-      <p class="eyebrow">The whole surface</p>
-      <h2>A dozen commands, six buttons</h2>
-      <p class="lede">Joining is a short chat — timezone, sex, height, birth date, starting weight, goal rate and cuisines. After that you mostly just send photos.</p>
+      <p class="eyebrow">A day with Umai</p>
+      <h2>Four moments, none of them data entry</h2>
+      <p class="lede">No forms, no barcode hunting, no scrolling a database of nine hundred kinds of yoghurt. You already take photos of your food.</p>
     </div>
 
-    <div class="cmds">
-      <div class="cmd"><code>/start</code><span>Join with an invite phrase, then answer seven questions</span></div>
-      <div class="cmd"><code>/today</code><span>Totals, target, and what is left</span></div>
-      <div class="cmd"><code>/week</code><span>The last seven days at a glance</span></div>
-      <div class="cmd"><code>/edit</code><span>Fix or remove anything logged today</span></div>
-      <div class="cmd"><code>/library</code><span>Your frequent foods, one tap to re-log</span></div>
-      <div class="cmd"><code>/recipe</code><span>Save a dish you cook often</span></div>
-      <div class="cmd"><code>/cuisines</code><span>What you usually eat, up to six</span></div>
-      <div class="cmd"><code>/dinnerware</code><span>Your plate and bowl sizes, for better portions</span></div>
-      <div class="cmd"><code>/token</code><span>Connect your phone's health export</span></div>
-      <div class="cmd"><code>/export</code><span>Everything Umai holds about you, as a file</span></div>
-      <div class="cmd"><code>/delete_me</code><span>Erase all of it, for good</span></div>
-      <div class="cmd"><code>/help</code><span>This list, in the chat</span></div>
+    <div class="day">
+      <div class="step">
+        <div class="head"><span class="no">01</span><span class="when">Morning</span></div>
+        <h3>Weigh in</h3>
+        <p>One tap, one number. Umai keeps a single weight per day and smooths the noise into a trend you can actually read.</p>
+        <div class="chat">
+          <div class="bub you">⚖️ 78.4</div>
+          <div class="bub bot">Logged. Trend <b>78.9 kg</b>, ↓ 0.4 this week.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="head"><span class="no">02</span><span class="when">Lunch</span></div>
+        <h3>Send the photo</h3>
+        <p>Umai names the dish, estimates the portion, prices it in calories and macros, and asks you once to confirm.</p>
+        <div class="chat">
+          <div class="bub you">📷</div>
+          <div class="bub bot">Grilled salmon, roast potatoes, green salad.<br><b>624 kcal</b> · 41 P / 52 C / 28 F<br>Right? ✅ / ✏️</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="head"><span class="no">03</span><span class="when">Afternoon</span></div>
+        <h3>Tap the small stuff</h3>
+        <p>Water is one button. Repeat foods come from your library. Typing works too, in plain words, with no syntax to learn.</p>
+        <div class="chat">
+          <div class="bub you">a latte and 150g pasta</div>
+          <div class="bub bot">Logged. <b>1 042 kcal</b> left today.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="head"><span class="no">04</span><span class="when">Evening</span></div>
+        <h3>Get the verdict</h3>
+        <p>At your own local hour, unprompted: the day totalled, weighed against your target, with what it means for tomorrow.</p>
+        <div class="chat">
+          <div class="bub bot"><b>1 940 / 2 050 kcal</b><br>Protein 118 g ✅ · Water 2.1 L<br>8 430 steps · on track.</div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ══ FOOTER ════════════════════════════════════════ -->
+<!-- FOOTER -->
 <footer>
   <div class="wrap">
     <img class="fmark" src="umai-logo.jpg" alt="">
-    <p><strong>Umai</strong> — a self-hosted personal nutrition assistant.</p>
-    <p>Python · aiogram · PostgreSQL · runs happily on a Raspberry Pi.</p>
+    <p><strong>Umai</strong>, a self-hosted personal nutrition assistant.</p>
   </div>
 </footer>
 
