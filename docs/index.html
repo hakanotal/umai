@@ -67,6 +67,33 @@
   header.hero h1 em{font-style:italic; color:var(--green-soft)}
   header.hero .lede{margin:0 auto}
 
+.button {
+  display: inline-block;
+  background-color: var(--green);
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 14px 32px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  margin-top: 24px;
+}
+
+.button:hover {
+  background-color: var(--ink);
+  color: var(--paper);
+  transform: translateY(-2px);
+}
+
+.button:active {
+  transform: translateY(0);
+}
+
   /* the day, a 2x2 grid */
   .day{display:grid; gap:24px; grid-template-columns:repeat(2,1fr)}
   .step{
@@ -172,6 +199,7 @@
     <img class="mark" src="umai-logo.jpg" alt="Umai logo">
     <h1>Eat. Photograph.<br><em>That is the whole workflow.</em></h1>
     <p class="lede">Umai is a self-hosted nutrition coach that lives in your Telegram chat. It reads your plate, does the arithmetic in code, and tells you at the end of the day whether you are on track.</p>
+    <a class="button" href="https://t.me/umai_diet_bot">Try Now! &rarr;</a>
   </div>
 </header>
 
@@ -454,8 +482,8 @@
         <h3>Get the verdict</h3>
         <p>Ask with <code>/today</code> whenever you like, and the same summary arrives on its own at your local evening hour.</p>
         <div class="chat">
-          <div class="bub you">/today</div>
-          <div class="bub bot"><b>1 940 / 2 050 kcal</b><br>Protein 118 g ✅ · Water 2.1 L<br>8 430 steps · on track.</div>
+          <div class="bub you">📊 Today</div>
+          <div class="bub bot"><b>1940 / 2050 kcal</b><br>Protein 118 g ✅ · Water 2.1 L<br>8,430 steps · on track.</div>
         </div>
       </div>
     </div>
