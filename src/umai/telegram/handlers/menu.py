@@ -36,6 +36,7 @@ MENU_LABELS = {
     keyboards.BTN_EDIT,
     keyboards.BTN_WEIGH,
     keyboards.BTN_CONFIGURE,
+    keyboards.BTN_RECIPE,
 }
 
 
@@ -89,6 +90,10 @@ async def menu_button(
         return
     if label == keyboards.BTN_CONFIGURE:
         await message.answer("Configure your setup:", reply_markup=keyboards.configure_menu())
+        return
+    if label == keyboards.BTN_RECIPE:
+        await state.set_state(Awaiting.recipe_name)
+        await message.answer("What's the recipe name?")
         return
     # BTN_WEIGH
     await state.set_state(Awaiting.number)

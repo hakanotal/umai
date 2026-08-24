@@ -94,5 +94,5 @@ def test_emoji_vocabulary_is_consistent():
     assert keyboards.BTN_WEEK.startswith(keyboards.CHART)
     assert keyboards.BTN_EDIT.startswith(keyboards.PENCIL)
     assert keyboards.BTN_WEIGH.startswith(keyboards.SCALE)
-    assert "My Recipes" in keyboards.BTN_LIBRARY
+    assert "Recipes" in keyboards.BTN_LIBRARY
     assert keyboards.BTN_CONFIGURE.startswith(keyboards.GEAR)

@@ -48,7 +48,8 @@ BTN_TODAY = f"{CALENDAR} Today"
 BTN_WEEK = f"{CHART} Week"
 BTN_EDIT = f"{PENCIL} Edit"
 BTN_WEIGH = f"{SCALE} Weigh in"
-BTN_LIBRARY = "🍽️ My Recipes"
+BTN_RECIPE = "📝 New"
+BTN_LIBRARY = "🍽️ Recipes"
 BTN_CONFIGURE = f"{GEAR} Configure"
 
 ENTRY_PREFIX_LEN = 8
@@ -65,15 +66,20 @@ def main_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [
                 KeyboardButton(text=WATER_250),
-                KeyboardButton(text=BTN_LIBRARY),
                 KeyboardButton(text=BTN_WEIGH),
             ],
             [
-                KeyboardButton(text=BTN_EDIT),
                 KeyboardButton(text=BTN_TODAY),
-                KeyboardButton(text=BTN_WEEK),
+                KeyboardButton(text=BTN_WEEK)
             ],
-            [KeyboardButton(text=BTN_CONFIGURE)],
+            [
+                KeyboardButton(text=BTN_RECIPE),
+                KeyboardButton(text=BTN_LIBRARY),
+            ],
+            [
+                KeyboardButton(text=BTN_EDIT),
+                KeyboardButton(text=BTN_CONFIGURE)
+            ]
         ],
         input_field_placeholder="…or just type what you ate",
         resize_keyboard=True,
@@ -85,14 +91,11 @@ def configure_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📝 New Recipe", callback_data="cfg:recipe"),
-                InlineKeyboardButton(text="🥣 Dinnerware", callback_data="cfg:dinnerware"),
-            ],
-            [
                 InlineKeyboardButton(text="🌍 Cuisines", callback_data="cfg:cuisines"),
                 InlineKeyboardButton(text="📱 Health sync", callback_data="cfg:token"),
             ],
             [
+                InlineKeyboardButton(text="🥣 Dinnerware", callback_data="cfg:dinnerware"),
                 InlineKeyboardButton(text="💧 Water target", callback_data="cfg:water"),
             ],
         ]

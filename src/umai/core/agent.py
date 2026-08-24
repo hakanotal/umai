@@ -153,7 +153,7 @@ The buttons under the message field cover everything:
 📅 Today: today's totals
 📊 Week: the last seven days
 ✏️ Edit: fix or remove something you logged
-🍽️ My Recipes: your frequent foods, one-tap re-log
+🍽️ Recipes: your frequent foods, one-tap re-log
 🥣 Dinnerware: plate sizes for better portion estimates
 ⚖️ Weigh in: log your morning weight
 📝 New Recipe: save a dish you cook often
@@ -377,9 +377,9 @@ async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:
         if not (totals.entry_count or totals.kcal or steps):
             continue
 
-        parts = [f"🔥 {totals.kcal:.0f} kcal", f"🥩 P {totals.protein_g:.0f}g"]
+        parts = [f"🔥 {totals.kcal:.0f}", f"🥩 {totals.protein_g:.0f}g"]
         if steps is not None and not steps.suspect:
-            parts.append(f"👟 {steps.steps:,} steps")
+            parts.append(f"👟 {steps.steps:,}")
             step_total += steps.steps
             step_days += 1
         lines.append(f"  {day:%a %d}: " + ", ".join(parts))
