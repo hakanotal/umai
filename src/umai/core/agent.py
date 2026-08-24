@@ -150,13 +150,13 @@ You can also just type it: "200g rice and chicken" or "a coffee".
 
 The buttons under the message field cover everything:
 💧 250 ml: log water in one tap
-📊 Today: today's totals
+📅 Today: today's totals
 📊 Week: the last seven days
 ✏️ Edit: fix or remove something you logged
-📚 Library: your frequent foods, one-tap re-log
-🍽️ Dinnerware: plate sizes for better portion estimates
+🍽️ My Recipes: your frequent foods, one-tap re-log
+🥣 Dinnerware: plate sizes for better portion estimates
 ⚖️ Weigh in: log your morning weight
-📝 Recipe: save a dish you cook often
+📝 New Recipe: save a dish you cook often
 🌍 Cuisines: what you usually eat (helps me recognise your food)
 """
 
@@ -377,9 +377,9 @@ async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:
         if not (totals.entry_count or totals.kcal or steps):
             continue
 
-        parts = [f"{totals.kcal:.0f} kcal", f"P {totals.protein_g:.0f}g"]
+        parts = [f"🔥 {totals.kcal:.0f} kcal", f"🥩 P {totals.protein_g:.0f}g"]
         if steps is not None and not steps.suspect:
-            parts.append(f"{steps.steps:,} steps")
+            parts.append(f"👟 {steps.steps:,} steps")
             step_total += steps.steps
             step_days += 1
         lines.append(f"  {day:%a %d}: " + ", ".join(parts))
@@ -387,7 +387,7 @@ async def week_summary(session: AsyncSession, user: User, clock: Clock) -> str:
     if not lines:
         return "Nothing logged in the last seven days."
 
-    out = "Last seven days:\n" + "\n".join(reversed(lines))
+    out = "🗓️ Last seven days:\n" + "\n".join(reversed(lines))
     if step_days:
         # Averaged over the days the phone actually reported, not over seven: a
         # day that never synced is missing data, and dividing by it would

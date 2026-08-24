@@ -44,11 +44,11 @@ BOOK = "📚"
 GEAR = "⚙️"
 
 WATER_250 = f"{WATER} 250 ml"
-BTN_TODAY = f"{CHART} Today"
-BTN_WEEK = f"{CALENDAR} Week"
+BTN_TODAY = f"{CALENDAR} Today"
+BTN_WEEK = f"{CHART} Week"
 BTN_EDIT = f"{PENCIL} Edit"
 BTN_WEIGH = f"{SCALE} Weigh in"
-BTN_LIBRARY = f"{BOOK} Library"
+BTN_LIBRARY = "🍽️ My Recipes"
 BTN_CONFIGURE = f"{GEAR} Configure"
 
 ENTRY_PREFIX_LEN = 8
@@ -65,12 +65,12 @@ def main_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [
                 KeyboardButton(text=WATER_250),
-                KeyboardButton(text=BTN_WEIGH),
                 KeyboardButton(text=BTN_LIBRARY),
+                KeyboardButton(text=BTN_WEIGH),
             ],
             [
-                KeyboardButton(text=BTN_TODAY),
                 KeyboardButton(text=BTN_EDIT),
+                KeyboardButton(text=BTN_TODAY),
                 KeyboardButton(text=BTN_WEEK),
             ],
             [KeyboardButton(text=BTN_CONFIGURE)],
@@ -85,11 +85,11 @@ def configure_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📝 Recipe", callback_data="cfg:recipe"),
-                InlineKeyboardButton(text="🍽️ Dinnerware", callback_data="cfg:dinnerware"),
-                InlineKeyboardButton(text="🌍 Cuisines", callback_data="cfg:cuisines"),
+                InlineKeyboardButton(text="📝 New Recipe", callback_data="cfg:recipe"),
+                InlineKeyboardButton(text="🥣 Dinnerware", callback_data="cfg:dinnerware"),
             ],
             [
+                InlineKeyboardButton(text="🌍 Cuisines", callback_data="cfg:cuisines"),
                 InlineKeyboardButton(text="📱 Health sync", callback_data="cfg:token"),
             ],
             [
@@ -308,7 +308,7 @@ def library_items(items: list[LibraryItem]) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                text=f"{CHECK} {item.name} ({item.typical_grams:.0f}g)",
+                text=f"{item.name} ({item.typical_grams:.0f}g)",
                 callback_data=f"lib:{item.food_id}:{item.typical_grams:.0f}",
             )
         ]

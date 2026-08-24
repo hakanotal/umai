@@ -90,9 +90,9 @@ def test_emoji_vocabulary_is_consistent():
     """One 💧 everywhere, not 💧 here and 🥤 there. This is the closest thing
     to a colour theme a Telegram bot has."""
     assert keyboards.WATER_250.startswith(keyboards.WATER)
-    assert keyboards.BTN_TODAY.startswith(keyboards.CHART)
-    assert keyboards.BTN_WEEK.startswith(keyboards.CALENDAR)
+    assert keyboards.BTN_TODAY.startswith(keyboards.CALENDAR)
+    assert keyboards.BTN_WEEK.startswith(keyboards.CHART)
     assert keyboards.BTN_EDIT.startswith(keyboards.PENCIL)
     assert keyboards.BTN_WEIGH.startswith(keyboards.SCALE)
-    assert keyboards.BTN_LIBRARY.startswith(keyboards.BOOK)
+    assert "My Recipes" in keyboards.BTN_LIBRARY
     assert keyboards.BTN_CONFIGURE.startswith(keyboards.GEAR)

@@ -82,28 +82,28 @@ def test_format_day_water_with_target():
     u = _user(water_target_ml=2500)
     t = _totals(water_ml=1200)
     text = format_day(u, t, None, water_target_ml=2500)
-    assert "Water 1200 / 2500 ml (48%)" in text
+    assert "Water 1200 / 2500 ml [48%]" in text
 
 
 def test_format_day_water_target_reached():
     u = _user(water_target_ml=2000)
     t = _totals(water_ml=2000)
     text = format_day(u, t, None, water_target_ml=2000)
-    assert "Water 2000 / 2000 ml (100%)" in text
+    assert "Water 2000 / 2000 ml [100%]" in text
 
 
 def test_format_day_water_over_target():
     u = _user(water_target_ml=2000)
     t = _totals(water_ml=2500)
     text = format_day(u, t, None, water_target_ml=2000)
-    assert "Water 2500 / 2000 ml (100%)" in text
+    assert "Water 2500 / 2000 ml [100%]" in text
 
 
 def test_format_day_zero_water_with_target():
     u = _user(water_target_ml=2500)
     t = _totals(water_ml=0)
     text = format_day(u, t, None, water_target_ml=2500)
-    assert "Water 0 / 2500 ml (0%)" in text
+    assert "Water 0 / 2500 ml [0%]" in text
 
 
 def test_format_day_water_target_none_shows_plain():

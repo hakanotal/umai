@@ -1288,6 +1288,7 @@ def format_day(
     *,
     steps: DaySteps | None = None,
     water_target_ml: float | None = None,
+    step_target: int = 10_000,
 ) -> str:
     """The one summary formatter. Deterministic, in code, no model call.
 
@@ -1296,23 +1297,24 @@ def format_day(
     calories" is named there as the single most reliable way to erase a deficit
     — so the number is shown beside the target, never folded into it.
     """
-    lines = [
-        f"Today: {totals.kcal:.0f} kcal"
-        + (f" of {target.kcal_target}" if target else "")
-        + f", protein {totals.protein_g:.0f}g"
-    ]
+    lines = ["📅 Today:"]
     if target:
-        left = target.kcal_target - totals.kcal
-        if left >= 0:
-            lines.append(f"{left:.0f} kcal left, protein target {target.protein_target_g}g")
-        else:
-            lines.append(f"{-left:.0f} kcal over, protein target {target.protein_target_g}g")
+        kcal_delta = totals.kcal - target.kcal_target
+        sign = "+" if kcal_delta >= 0 else ""
+        kcal_line = f"🔥 {totals.kcal:.0f} kcal of {target.kcal_target}"
+        lines.append(f"{kcal_line} [{sign}{kcal_delta:.0f} kcal]")
+        prot_delta = totals.protein_g - target.protein_target_g
+        prot_sign = "+" if prot_delta >= 0 else ""
+        lines.append(f"🥩 protein {totals.protein_g:.0f}g [{prot_sign}{prot_delta:.0f}g]")
+    else:
+        lines.append(f"🔥 {totals.kcal:.0f} kcal")
+        lines.append(f"🥩 protein {totals.protein_g:.0f}g")
     if totals.water_ml or water_target_ml is not None:
         if water_target_ml is not None and water_target_ml > 0:
             pct = min(100, totals.water_ml / water_target_ml * 100)
-            lines.append(f"Water {totals.water_ml:.0f} / {water_target_ml:.0f} ml ({pct:.0f}%)")
+            lines.append(f"💧 Water {totals.water_ml:.0f} / {water_target_ml:.0f} ml [{pct:.0f}%]")
         else:
-            lines.append(f"Water {totals.water_ml:.0f} ml")
+            lines.append(f"💧 Water {totals.water_ml:.0f} ml")
     if steps is not None:
         if steps.suspect:
             # Printing a number here would be worse than printing nothing: it
@@ -1321,7 +1323,8 @@ def format_day(
                 f"Steps look wrong today ({steps.samples} readings). Check the export settings."
             )
         else:
-            lines.append(f"Steps {steps.steps:,}")
+            pct = min(100, steps.steps / step_target * 100)
+            lines.append(f"👟 Steps {steps.steps:,} / {step_target:,} [{pct:.0f}%]")
     if totals.unmatched_items:
         lines.append(
             f"⏳ {totals.unmatched_items} item(s) not yet in the food table, so "
