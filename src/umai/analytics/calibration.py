@@ -86,7 +86,9 @@ KCAL_PER_STEP_PER_KG = 0.0005
 # The step count that `tdee_base` is defined at, so the fitted number is a
 # recognisable daily total rather than an extrapolated resting value.
 REFERENCE_STEPS = 8_000
-SEDENTARY_MULTIPLIER = 1.4  # BMR -> TDEE, used only to seed the prior
+# The BMR→TDEE multiplier is applied as a bare `* 1.4` literal in
+# core/tools.py current_target(). A named constant here was never imported
+# and created a maintenance trap — do not re-add it.
 
 
 @dataclass(frozen=True, slots=True)

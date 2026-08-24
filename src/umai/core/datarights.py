@@ -18,13 +18,15 @@ the property the whole trust-tier design rests on, that fixing one row
 retroactively corrects everyone.
 
 **What deletion cannot rely on.** Twelve tables cascade from `users`, which
-does most of the work. Two do not. `corrections` references `log_entries` and
-`food_items` with no ON DELETE clause at all, so it would raise a foreign-key
-violation rather than follow; and `perception_runs.entry_id` is ON DELETE SET
-NULL, which would leave the raw model response — a description of what somebody
-ate — sitting in the table with its owner removed. Both are deleted explicitly,
-before the cascade, and `test_data_rights.py` is what stops the next FK added
-here from being forgotten.
+does most of the work. Two do not, and both are ON DELETE SET NULL rather than
+CASCADE: `corrections`, which records what a gram fix changed, and
+`perception_runs`, which holds the raw model response — a description of what
+somebody ate. SET NULL is the right default for both, because a correction and
+a perception run outlive the entry they describe by design; it is the wrong
+answer for erasure, where it would leave those rows in the table with their
+owner removed and nothing left to say whose they were. Both are deleted
+explicitly, before the cascade, and `test_data_rights.py` is what stops the
+next foreign key added here from being forgotten.
 """
 
 from __future__ import annotations
@@ -201,14 +203,17 @@ async def erase(session: AsyncSession, user_id: uuid.UUID) -> None:
     """Remove a person and everything of theirs.
 
     The order is the point. Twelve tables cascade from `users` and would follow
-    on their own, but two would not:
+    on their own, but two are ON DELETE SET NULL and would not:
 
-      * `corrections` references `log_entries` and `food_items` with no
-        ON DELETE clause, so the cascade would hit a foreign-key violation and
-        the whole deletion would fail.
-      * `perception_runs.entry_id` is ON DELETE SET NULL, so the raw model
-        response — which describes what somebody ate — would survive with its
-        owner removed and no way left to tell whose it was.
+      * `corrections`, which records what a gram fix changed.
+      * `perception_runs`, which holds the raw model response — a description
+        of what somebody ate.
+
+    SET NULL is right for both in normal operation: a correction and a
+    perception run are meant to outlive the entry they describe, which is what
+    makes the audit trail and "re-score this old photo" possible. It is wrong
+    for erasure, where it would leave those rows behind with their owner gone
+    and nothing left to say whose they were.
 
     So both are removed explicitly first, then the single DELETE does the rest.
     Media files on disk are the caller's job: they are not in the database, and

@@ -17,7 +17,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # .local.env first so a local override wins, then the conventional name.
+        # .env first, then .local.env so a local override wins (later entries
+        # override earlier ones via dict.update in pydantic-settings v2).
         env_file=(".env", ".local.env"),
         env_file_encoding="utf-8",
         extra="ignore",

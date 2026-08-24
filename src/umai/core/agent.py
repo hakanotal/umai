@@ -287,7 +287,7 @@ async def _log_food(
     clock: Clock,
     items: list[dict[str, Any]],
 ) -> Reply:
-    resolver = Resolver(session, models)
+    resolver = Resolver(session)  # no models: tiebreak must not fire inside the write txn
     to_log: list[tools.ItemToLog] = []
     for it in items:
         resolution = await resolver.resolve(it["name"], FoodState(it["state"]), user.id)
@@ -402,7 +402,9 @@ async def log_photo(
     caption: str | None = None,
 ) -> Reply:
     """Stages 2-4 for a perception result."""
-    resolver = Resolver(session, models, caption=caption)
+    resolver = Resolver(
+        session, caption=caption
+    )  # no models: tiebreak must not fire inside the write txn
     to_log = [
         tools.ItemToLog(
             detected_name=it.name,

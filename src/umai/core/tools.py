@@ -1094,7 +1094,15 @@ async def _weight_rows(session: AsyncSession, user_id: uuid.UUID, limit: int) ->
         *((when, float(v)) for v, when in hrows),
     ]
     merged.sort(key=lambda r: r[0], reverse=True)
-    return [v for _, v in merged[:limit]]
+    # Deduplicate by timestamp: the same weigh-in may exist in both log_entries
+    # (manual) and health_metrics (sync). Keep the first (most recent source).
+    seen: set[dt.datetime] = set()
+    deduped: list[float] = []
+    for ts, v in merged:
+        if ts not in seen:
+            seen.add(ts)
+            deduped.append(v)
+    return deduped[:limit]
 
 
 def current_target(user: User, weight_kg: float, clock: Clock) -> safety.TargetDecision:

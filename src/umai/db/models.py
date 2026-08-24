@@ -355,8 +355,10 @@ class FoodItem(Base):
     # addresses the same item the user was shown. UUID primary keys do not
     # preserve insertion order.
     position: Mapped[int | None] = mapped_column(Integer)
-    food_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("foods.id"))
-    recipe_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("recipes.id"))
+    food_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("foods.id", ondelete="SET NULL"))
+    recipe_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL")
+    )
 
     # verbatim from the vision model, kept even after resolution: this is the
     # training signal for the library and the audit trail for explain-why.
@@ -386,8 +388,12 @@ class Correction(Base):
     __tablename__ = "corrections"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    entry_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("log_entries.id"))
-    food_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("food_items.id"))
+    entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("log_entries.id", ondelete="SET NULL")
+    )
+    food_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("food_items.id", ondelete="SET NULL")
+    )
     field: Mapped[str] = mapped_column(String(64))
     old_value: Mapped[str | None] = mapped_column(Text)
     new_value: Mapped[str | None] = mapped_column(Text)
@@ -500,7 +506,9 @@ class Recipe(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(200))
     # the same dish cooked differently is a version, not a new recipe.
-    parent_recipe_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("recipes.id"))
+    parent_recipe_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL")
+    )
 
     raw_input_grams: Mapped[float | None] = mapped_column(Float)
     # weighed once, after cooking. without it every simmered dish is wrong by
@@ -539,7 +547,7 @@ class RecipeIngredient(Base):
     recipe_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("recipes.id", ondelete="CASCADE"), index=True
     )
-    food_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("foods.id"))
+    food_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("foods.id", ondelete="CASCADE"))
     grams: Mapped[float] = mapped_column(Float)
 
     recipe: Mapped[Recipe] = relationship(back_populates="ingredients")
@@ -630,7 +638,7 @@ class Target(Base):
     protein_target_g: Mapped[float] = mapped_column(Float)
     rationale: Mapped[str | None] = mapped_column(Text)
     derived_from_calibration_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("calibration_state.id")
+        ForeignKey("calibration_state.id", ondelete="SET NULL")
     )
 
 

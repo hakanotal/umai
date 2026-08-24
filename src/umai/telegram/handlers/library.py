@@ -33,6 +33,7 @@ router = Router(name="library")
 
 
 @router.message(Command("library"))
+@router.message(F.text == keyboards.BTN_LIBRARY)
 async def library_command(
     message: Message, settings: Settings, clock: Clock, principal: Principal
 ) -> None:
@@ -60,10 +61,11 @@ async def library_quick_log(
     principal: Principal,
 ) -> None:
     """One-tap log from the library. Uses the typical portion."""
-    food_id_str = cb_data(callback).split(":", 1)[1]
+    parts = cb_data(callback).split(":", 2)
     try:
-        food_id = uuid.UUID(food_id_str)
-    except ValueError:
+        food_id = uuid.UUID(parts[1])
+        typical = float(parts[2]) if len(parts) > 2 else 100.0
+    except (ValueError, IndexError):
         await callback.answer("Invalid item.", show_alert=True)
         return
 
@@ -73,10 +75,6 @@ async def library_quick_log(
         if food is None:
             await callback.answer("That food no longer exists.", show_alert=True)
             return
-
-        # Get typical grams from portion priors, default to 100g
-        priors = await tools.portion_priors(session, user.id)
-        typical = priors.get(food.canonical_name_en, (100.0, 100.0, 100.0))[0]
 
         resolution = Resolution(
             food_id=food_id,

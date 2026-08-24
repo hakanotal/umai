@@ -1,7 +1,7 @@
 """multi-user: access state, per-user profile, per-user claims and media
 
 Revision ID: e1a7b3c95d24
-Revises: c4d5e6f7a8b9
+Revises: 3e44dad1fba0
 Create Date: 2026-08-23 15:00:00.000000
 
 The schema was always multi-user-capable; this is the revision that makes it
@@ -35,7 +35,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e1a7b3c95d24"
-down_revision: str | Sequence[str] | None = "c4d5e6f7a8b9"
+down_revision: str | Sequence[str] | None = "3e44dad1fba0"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

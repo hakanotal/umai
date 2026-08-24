@@ -299,7 +299,7 @@ class ModelClient:
         )
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        served = getattr(resp, "model", spec.id) or spec.id
+        served = getattr(resp, "model", "") or spec.id
         u = resp.usage
         self._account(task, served, u.prompt_tokens, u.completion_tokens, spec, latency_ms)
         return resp.choices[0].message.content, served, latency_ms
@@ -381,7 +381,7 @@ class ModelClient:
         )
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        served = getattr(resp, "model", spec.id) or spec.id
+        served = getattr(resp, "model", "") or spec.id
         u = resp.usage
         self._account(task, served, u.prompt_tokens, u.completion_tokens, spec, latency_ms)
         return resp.choices[0].message, served, latency_ms

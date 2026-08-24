@@ -309,7 +309,7 @@ def library_items(items: list[LibraryItem]) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text=f"{CHECK} {item.name} ({item.typical_grams:.0f}g)",
-                callback_data=f"lib:{item.food_id}",
+                callback_data=f"lib:{item.food_id}:{item.typical_grams:.0f}",
             )
         ]
         for item in items
