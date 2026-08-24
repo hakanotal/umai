@@ -208,6 +208,14 @@ engine fits gave a duplicated day double weight while a mistyped one biased it p
 Water accumulates and stays on `log_simple`; the day is the user's local day, so 23:00 Tuesday
 and 07:00 Wednesday are two measurements rather than one corrected.
 
+**The weight series is manual entries only.** Health-sync weight is still ingested and still
+appears in `/export`, but `_weight_rows` does not read it. Merging the two and deduplicating by
+timestamp made "which reading counts" depend on arrival order and on two clocks agreeing to the
+second; a manual weigh-in always wins because it is the one the user stood on a scale for and
+typed, where an export can carry an uncalibrated scale, a smart scale logging four times a
+morning, or a body-composition figure nobody saw. Steps are the opposite case and still come
+from `health_metrics` — the phone is the only thing that can count them.
+
 **Safety rails live in code, not prompts** (`analytics/safety.py`): floor at BMR and never below
 ~1200/1500 kcal, max ~1% body weight loss per week, protein floor in deficit.
 

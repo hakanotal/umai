@@ -25,7 +25,7 @@ from sqlalchemy import func, select
 
 from umai.clock import FakeClock
 from umai.core import tools
-from umai.db.models import Correction, EntryKind, EntrySource, LogEntry
+from umai.db.models import Correction, EntryKind, EntrySource, HealthMetric, LogEntry
 
 ZONE = "Europe/Istanbul"
 
@@ -202,3 +202,92 @@ async def test_onboarding_weight_uses_the_same_path(session, onboarding_user):
         session, onboarding_user, kg=81.0, occurred_at=_at(23, 8), source=EntrySource.manual
     )
     assert replaced == pytest.approx(80.0)
+
+
+# ---------------------------------------------------------------------------
+# The manual series is the only series
+# ---------------------------------------------------------------------------
+
+
+async def _sync_a_weight(session, user, kg: float, when: dt.datetime) -> None:
+    """A weight arriving from Health Auto Export, as `ingest.health` writes it."""
+    import uuid
+
+    session.add(
+        HealthMetric(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            metric="weight_kg",
+            value=kg,
+            unit="kg",
+            recorded_at=when,
+            source="health_auto_export",
+        )
+    )
+    await session.flush()
+
+
+async def test_a_synced_weight_is_not_read_as_the_users_weight(session, user):
+    """It is still stored and still exported; it just does not drive anything.
+
+    A phone export is a different thing wearing the same units: a scale nobody
+    calibrated, a smart scale logging several times a morning, a
+    body-composition device reporting a figure the user never saw. The number
+    behind somebody's calorie target should be one they can account for.
+    """
+    await _sync_a_weight(session, user, 95.0, _at(23, 6))
+    assert await tools.latest_weight(session, user.id) is None
+
+    await tools.log_weight(session, user, kg=89.0, occurred_at=_at(23, 7))
+    assert await tools.latest_weight(session, user.id) == pytest.approx(89.0)
+
+
+async def test_a_later_sync_never_overrides_a_manual_weigh_in(session, user):
+    """The ordering trap in the old code: the series merged both sources and
+    sorted by timestamp, so a sync arriving after a weigh-in won on recency."""
+    await tools.log_weight(session, user, kg=89.0, occurred_at=_at(23, 7))
+    await _sync_a_weight(session, user, 95.0, _at(23, 20))
+
+    assert await tools.latest_weight(session, user.id) == pytest.approx(89.0)
+
+
+async def test_synced_weight_does_not_pollute_the_previous_reading(session, user):
+    await tools.log_weight(session, user, kg=90.0, occurred_at=_at(22, 7))
+    await tools.log_weight(session, user, kg=89.0, occurred_at=_at(23, 7))
+    await _sync_a_weight(session, user, 95.0, _at(23, 12))
+
+    assert await tools.previous_weight(session, user.id) == pytest.approx(90.0)
+
+
+async def test_the_synced_weight_is_still_kept_and_exported(session, user):
+    """Not read is not the same as not held. It is the user's data, it came
+    from their phone, and /export has to return everything."""
+    from umai.core import datarights
+
+    await _sync_a_weight(session, user, 95.0, _at(23, 6))
+    exported = await datarights.export(session, user.id)
+    assert any(m["metric"] == "weight_kg" for m in exported["health_metrics"])
+
+
+async def test_steps_still_come_from_the_phone(session, user):
+    """The phone is the only thing that can count steps, so that path is
+    untouched by any of this."""
+    import uuid
+
+    from umai.clock import FakeClock as FC
+
+    session.add(
+        HealthMetric(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            metric="steps",
+            value=8200,
+            unit="count",
+            recorded_at=_at(23, 12),
+            source="health_auto_export",
+        )
+    )
+    await session.flush()
+
+    day = await tools.daily_steps(session, user, FC(_at(23, 20)))
+    assert day is not None and day.steps == 8200

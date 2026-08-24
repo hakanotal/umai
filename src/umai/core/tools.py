@@ -1159,42 +1159,41 @@ async def previous_weight(session: AsyncSession, user_id: uuid.UUID) -> float | 
 
 
 async def _weight_rows(session: AsyncSession, user_id: uuid.UUID, limit: int) -> list[float]:
-    from umai.db.models import HealthMetric
+    """The weight series: `log_entries` only, newest first.
 
-    entry_w = (
-        select(LogEntry.value, LogEntry.occurred_at)
-        .where(
-            LogEntry.user_id == user_id,
-            LogEntry.kind == EntryKind.weight,
-            LogEntry.superseded_by.is_(None),
+    **Health-sync weight is deliberately not read here**, though it is still
+    ingested and still appears in `/export`. It used to be merged with the
+    manual series and deduplicated by timestamp, which quietly made "which
+    reading counts" depend on which arrived first and on whether two clocks
+    agreed to the second.
+
+    A manual weigh-in always wins because it is the one the user stood on a
+    scale for and typed. A phone export is a different thing wearing the same
+    units: it can carry readings from a scale nobody calibrated, a smart scale
+    that logs several times a morning, or a body-composition device reporting a
+    figure the user never saw. Preferring it — or averaging it in — means the
+    number driving somebody's calorie target is one they cannot account for.
+
+    Steps are unaffected and still come from `health_metrics`; the phone is the
+    only thing that can count those.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(LogEntry.value)
+                .where(
+                    LogEntry.user_id == user_id,
+                    LogEntry.kind == EntryKind.weight,
+                    LogEntry.superseded_by.is_(None),
+                )
+                .order_by(LogEntry.occurred_at.desc())
+                .limit(limit)
+            )
         )
-        .order_by(LogEntry.occurred_at.desc())
-        .limit(limit)
+        .scalars()
+        .all()
     )
-    rows = (await session.execute(entry_w)).all()
-
-    health_w = (
-        select(HealthMetric.value, HealthMetric.recorded_at)
-        .where(HealthMetric.user_id == user_id, HealthMetric.metric == "weight_kg")
-        .order_by(HealthMetric.recorded_at.desc())
-        .limit(limit)
-    )
-    hrows = (await session.execute(health_w)).all()
-
-    merged: list[tuple[dt.datetime, float]] = [
-        *((when, float(v)) for v, when in rows),
-        *((when, float(v)) for v, when in hrows),
-    ]
-    merged.sort(key=lambda r: r[0], reverse=True)
-    # Deduplicate by timestamp: the same weigh-in may exist in both log_entries
-    # (manual) and health_metrics (sync). Keep the first (most recent source).
-    seen: set[dt.datetime] = set()
-    deduped: list[float] = []
-    for ts, v in merged:
-        if ts not in seen:
-            seen.add(ts)
-            deduped.append(v)
-    return deduped[:limit]
+    return [float(v) for v in rows if v is not None]
 
 
 def current_target(user: User, weight_kg: float, clock: Clock) -> safety.TargetDecision:
