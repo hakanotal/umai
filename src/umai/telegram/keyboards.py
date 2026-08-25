@@ -68,18 +68,12 @@ def main_menu() -> ReplyKeyboardMarkup:
                 KeyboardButton(text=WATER_250),
                 KeyboardButton(text=BTN_WEIGH),
             ],
-            [
-                KeyboardButton(text=BTN_TODAY),
-                KeyboardButton(text=BTN_WEEK)
-            ],
+            [KeyboardButton(text=BTN_TODAY), KeyboardButton(text=BTN_WEEK)],
             [
                 KeyboardButton(text=BTN_RECIPE),
                 KeyboardButton(text=BTN_LIBRARY),
             ],
-            [
-                KeyboardButton(text=BTN_EDIT),
-                KeyboardButton(text=BTN_CONFIGURE)
-            ]
+            [KeyboardButton(text=BTN_EDIT), KeyboardButton(text=BTN_CONFIGURE)],
         ],
         input_field_placeholder="…or just type what you ate",
         resize_keyboard=True,
