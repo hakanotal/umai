@@ -102,7 +102,7 @@ umai/
 │   │   ├── models.py              # already written
 │   │   └── settings.py            # Pydantic Settings, env-driven
 │   ├── clock.py                   # the time abstraction. read section 8.
-│   ├── theme.py                   # brand palette from the logo
+│   ├── theme.py                   # brand palette, shared with docs/index.html
 │   ├── db/
 │   │   ├── models.py              # SQLAlchemy tables from plan section 6.3
 │   │   └── session.py

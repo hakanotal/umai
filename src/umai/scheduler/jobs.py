@@ -35,6 +35,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, text
@@ -193,30 +194,64 @@ async def evening_summary(
         except RuntimeError:
             target = None
 
-    days, kcal, _protein = await _last_days(session, user, clock, 7)
-    png = charts_mod.week_kcal(days, kcal, target.kcal_target if target else None)
-    steps = await tools.daily_steps(session, user, clock)
     wt = tools.water_target(user, settings)
+    week = await _last_days(session, user, clock, 7)
+    png = charts_mod.week_overview(
+        week.days,
+        week.kcal,
+        week.water_ml,
+        week.steps,
+        kcal_target=target.kcal_target if target else None,
+        water_target_ml=wt,
+    )
+    steps = await tools.daily_steps(session, user, clock)
     caption = tools.format_day(user, totals, target, steps=steps, water_target_ml=wt)
     await send(telegram_id, png, caption)
 
 
-async def _last_days(
-    session: AsyncSession, user: User, clock: Clock, n: int
-) -> tuple[list[dt.date], list[float], list[float]]:
-    """Per-day totals for the last n local days, zeros included (for the chart
-    a flat zero is honest: nothing was logged)."""
+@dataclass(frozen=True, slots=True)
+class WeekSeries:
+    """One week of the three digest metrics, aligned day for day.
+
+    A dataclass rather than a tuple of four lists because the chart's three
+    series must stay in step with `days`, and a positional swap between
+    `water_ml` and `steps` would draw a plausible, wrong picture in silence.
+    """
+
+    days: list[dt.date]
+    kcal: list[float]
+    water_ml: list[float]
+    steps: list[int | None]
+
+
+async def _last_days(session: AsyncSession, user: User, clock: Clock, n: int) -> WeekSeries:
+    """The last n local days of intake, water and steps.
+
+    Calories and water are zero on a day nothing was logged - that is honest,
+    nothing *was* eaten or drunk as far as the record goes. Steps are None on a
+    day the phone delivered nothing, which is a different claim from zero and
+    stays None all the way to the bar the chart declines to draw.
+
+    Steps come from one ranged query rather than n daily ones, so the chart
+    costs a single round trip however long the window is.
+    """
     end = local_date(clock.now(), user.zone)
+    start = end - dt.timedelta(days=n - 1)
+    by_day = await tools.steps_by_day(session, user, start, end)
+
     days: list[dt.date] = []
     kcal: list[float] = []
-    protein: list[float] = []
+    water: list[float] = []
+    steps: list[int | None] = []
     for back in range(n - 1, -1, -1):
         day = end - dt.timedelta(days=back)
         totals = await tools.day_totals(session, user, clock, day)
         days.append(day)
         kcal.append(totals.kcal)
-        protein.append(totals.protein_g)
-    return days, kcal, protein
+        water.append(totals.water_ml)
+        reading = by_day.get(day)
+        steps.append(reading.steps if reading is not None else None)
+    return WeekSeries(days=days, kcal=kcal, water_ml=water, steps=steps)
 
 
 async def enrichment_sweep(session_factory, models, clock: Clock) -> None:

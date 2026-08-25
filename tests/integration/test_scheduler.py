@@ -21,7 +21,7 @@ from sqlalchemy import select
 from umai.clock import FakeClock
 from umai.config.settings import Settings
 from umai.core import tools
-from umai.db.models import EntryKind, EntrySource, JobRun, UserStatus
+from umai.db.models import EntryKind, EntrySource, HealthMetric, JobRun, UserStatus
 from umai.scheduler import jobs
 
 SETTINGS = Settings(_env_file=None, TZ="Europe/Istanbul", UMAI_WATER_TARGET_ML=2500.0)
@@ -269,3 +269,23 @@ async def test_two_users_are_reminded_about_water_independently(session, user, o
     recorder = Recorder()
     await jobs.user_tick(_factory(session), SETTINGS, clock, recorder.send, recorder.send_text)
     assert {tid for tid, _ in recorder.texts} == {user.telegram_id, other_user.telegram_id}
+
+
+async def test_the_weeks_series_keeps_a_missing_step_day_missing(session, user):
+    """`_last_days` feeds the digest chart, and the chart draws a bar for a
+    zero and a "?" for a missing reading. Collapsing None to zero here would
+    report a day the phone failed to sync as a day spent sitting down — the
+    same conflation `tools.daily_steps` exists to prevent, one layer up."""
+    clock = FakeClock(_at(user.tz, 23, 21, 45))
+    walked = _at(user.tz, 21, 12, 0)
+    session.add(
+        HealthMetric(user_id=user.id, metric="steps", value=9000, unit="count", recorded_at=walked)
+    )
+    await session.flush()
+
+    week = await jobs._last_days(session, user, clock, 7)
+
+    assert len(week.days) == len(week.kcal) == len(week.water_ml) == len(week.steps) == 7
+    by_day = dict(zip(week.days, week.steps, strict=True))
+    assert by_day[dt.date(2026, 8, 21)] == 9000
+    assert by_day[dt.date(2026, 8, 22)] is None
