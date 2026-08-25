@@ -1,5 +1,15 @@
-# Built on the Mac for linux/arm64, pushed, pulled by the Pi. Never built on the
-# Pi: it is slow, and it puts a compiler toolchain on the machine holding the data.
+# Built by Railway from the connected repo, and on the Mac by
+# docker-compose.app.yml when you want to watch the real image start before
+# pushing. No architecture is pinned here: `just build`'s old --platform
+# linux/arm64 existed only because the Pi was arm64.
+#
+# No `--mount=type=cache` on the uv steps, deliberately. Railway's builder
+# rejects the flag — "missing an id argument", and adding an id does not
+# satisfy it either — and the rejection lands before the build starts, so the
+# deploy fails with a build log containing nothing but "scheduling build",
+# which reads like a broken builder rather than a bad Dockerfile. The cost is
+# small: dependencies are still their own layer, copied before the source, so
+# the only builds that pay full download are the ones that changed uv.lock.
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
@@ -7,15 +17,13 @@ WORKDIR /app
 
 # dependencies first, so a source edit does not invalidate the layer
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev
 
 COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 COPY README.md ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev
 
 # ---------------------------------------------------------------------------
 
