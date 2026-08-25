@@ -18,6 +18,7 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Correlations module**: pre-declared pairings, Holm correction, 50-seed noise property test.
 - **First Docker session audit**: every finding fixed (A1–A6, B1–B8, C1–C6, D1–D9, E1–E4; D10 deliberately unchanged, documented).
 - **UI/UX overhaul**: persistent reply keyboard (💧 250 ml, 📊 Today, 📊 Week, ✏️ Edit, 📚 Library, 🍽️ Dinnerware, ⚖️ Weigh in, 📝 Recipe, 🌍 Cuisines) — every feature reachable without typing; button taps matched before the intent classifier so they never cost a model call; `/help`, `/edit`, `/dinnerware`, `/recipe`, `/library` commands; edit/remove flow for today's entries — per-item gram fixes, whole-meal removal with confirm, water amount edit — with the photo archive and supersede-chain invariants protected; brand palette sampled from the logo (`src/umai/theme.py`) applied to the charts; copy pass (plain language, no em dashes).
+- **Deployed to Railway** (2026-08-24), replacing the Raspberry Pi plan, which was never finished. Project `UMAI`: service `umai-bot` built from the connected repo with `alembic upgrade head` as a pre-deploy command, and a `pgvector` Postgres 17.11 — the template is required because the initial migration creates the `vector` extension and Railway's stock Postgres has none. The local database was dumped and restored intact (1 user, 41 log entries, 65 foods, 5 431 FNDDS rows, 105 health metrics, at head `a91c4e02f5d8`), a volume mounted at `/app/data/media` for new photos (the seven existing files are still only on the Mac — see Todo), and `@umai_diet_bot` now runs webhook-mode on `umai-bot-production.up.railway.app` with `/healthz` reporting `{ok, db}`. Three code changes were needed: `normalise_async_dsn` (Railway's DSN is libpq-shaped and asyncpg refuses `sslmode`), `PORT` as a fallback for `UMAI_HTTP_PORT`, and dropping the uv cache mounts, which Railway's builder rejects while failing with an empty build log.
 - **Photo caption as context**: when a user sends a photo with a caption (e.g. "lahmacun"), the caption is injected into the vision prompt via `PromptContext.note` and into the resolver's tiebreak LLM message as advisory context.
 - **Dinnerware calibration** (`/dinnerware`): measured once with a bank card beside the plate, stored per-user, injected into every photo prompt as the primary scale reference. CRUD via `/dinnerware name: description` with inline remove buttons.
 - **Recipe creation** (`/recipe`): schema, resolver tier, and compute path all existed; now wired to chat. Name the recipe, add ingredients one per message, optional cooked weight for yield factor, per-100g profile computed and stored.
@@ -36,7 +37,7 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 ## In progress
 
 - **Three weeks of real use** (Phase 1 gate): the bot is running in Docker on the Mac (`docker compose -f docker-compose.app.yml`), logging real meals, enrichment filling gaps as they appear. Pleasant or stop.
-- **Health ingest against the real app**: endpoint written, idempotent, tested — but has never received a payload from Health Auto Export (needs the phone + Tailscale).
+- **Health ingest against the real app**: endpoint written, idempotent, tested, and now reachable at a real HTTPS URL — but has never received a payload from Health Auto Export. Tailscale is no longer in the way; what remains is configuring the phone and the paid REST export.
 
 ## Todo
 
@@ -45,7 +46,7 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 The plan's §10.6 says "Then Phase 1, and use it for three weeks before writing a line of Phase 2." Phase 2 and 3 machinery was built ahead of the Phase -1/0/1 gates:
 
 - **Phase -1 (baseline eval)** — *half met.* Variance measured (mean CV 0.07). Bias never measured: `eval/photos/` holds 24 photos but `eval/truth.csv` has 3 rows copied from the README example. The plan calls this "run before any bot code"; the bot is written.
-- **Phase 0 (passive data for three days)** — *not met.* No real Health Auto Export payload has ever arrived. Blocked on Tailscale + the paid REST export.
+- **Phase 0 (passive data for three days)** — *not met.* No real Health Auto Export payload has ever arrived. No longer blocked on reachability; the endpoint is public and token-authenticated. Blocked on the paid REST export and the phone-side setup.
 - **Phase 0.5 (food table)** — *partly.* 46 starter rows against the plan's 150–300; the label-photo importer (named as the cheapest way to fill every gap thereafter) is written but unwired.
 - **Phase 1 (the logging loop)** — *built except voice.* The three-week use gate has not started.
 
@@ -74,7 +75,8 @@ What is deliberately *not* next: calibration wiring waits for weeks of real hist
 - **Eval ground truth** — weigh the 20 photos' items so bias (not just variance) can be measured and model changes ranked.
 - **USDA full import** — free API key (https://fdc.nal.usda.gov/api-key-signup.html), then `tools/seed_foods.py --source usda`. TurKomp CSV still to be filled (~150–300 dishes).
 - **Satiety / alcohol / fasting window / body measurements** — cheap to collect, unlock Phase 4 analysis.
-- **Pi deploy** when stable (same image, `UMAI_ENV=prod`, webhook + Tailscale); then backups.
+- **Rate limiting on `/ingest/health`.** It is on the public internet now, guarded by a per-user bearer token and nothing else; behind a tailnet that gap did not matter.
+- **Photos onto the Railway volume**: the 7 existing files are still only on the Mac. `railway volume files upload` needs an SSH key registered on the account (`railway ssh keys add`).
 
 
 ---

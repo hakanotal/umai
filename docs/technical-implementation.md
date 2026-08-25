@@ -1,6 +1,6 @@
 # Umai: Technical Implementation Plan
 
-*How to build this on your MacBook, verify it works, and only then put it on the Pi.*
+*How to build this on your MacBook, verify it works, and only then deploy it to Railway.*
 
 **Version:** 1.0
 **Date:** 22 August 2026
@@ -10,14 +10,14 @@
 
 ## 1. Short answer
 
-Yes, develop locally, and not as a convenience. The Pi is a deployment target, not a development
-environment. Building on it directly means slow rebuilds, a compiler toolchain on your production
-box, and a debugging loop that runs over SSH.
+Yes, develop locally, and not as a convenience. Railway is a deployment target, not a development
+environment. Iterating against it means waiting on a build and a release for every edit, and
+reading a build log instead of a traceback.
 
-Your Mac and the Pi are both **arm64**, so container images built on one run unmodified on the
-other. That is the single fact that makes this easy. There is no cross-compilation problem, no
-architecture surprises at deploy time, and no "works on my machine" that traces back to CPU
-instruction sets.
+Nothing is shared between the two but the Dockerfile, and nothing in it pins an architecture:
+Railway builds amd64 from the repo, Apple Silicon builds arm64 from the same file. `just
+docker-app` is where the two meet — the production image, built here, running against the dev
+database, which is where "works on the host, fails in the container" gets caught.
 
 What makes this app awkward to develop locally is not the code. It is four external dependencies
 that assume a publicly reachable server. Each has a clean answer.
@@ -37,16 +37,20 @@ that assume a publicly reachable server. Each has a clean answer.
 brew install --cask docker          # Docker Desktop. Docker runtime for local development.
 brew install uv                     # Python packaging. Replaces pip, venv, poetry, pyenv.
 brew install just                   # Task runner. Optional but the recipes below assume it.
-brew install tailscale              # Reaching your Mac from your phone.
+brew install railway                # Deploying, logs, and the production database.
 brew install postgresql@17          # For psql only. The server runs in Docker.
 ```
 
-Docker Desktop runs arm64 containers natively on Apple Silicon, no emulation involved, so the
-same portability argument in section 11 (build once, run on Mac and Pi) holds regardless.
+Tailscale is no longer on this list. It existed to reach the Pi's loopback-bound ingest endpoint
+from a phone; Railway publishes an HTTPS domain, so the tunnel has nothing left to do.
+
+Docker Desktop is for local development and for `just docker-app`, which runs the production
+image before you push it. Railway builds amd64 and Apple Silicon is arm64, so the image is
+rebuilt there rather than shipped from here — nothing in the Dockerfile pins an architecture.
 
 `uv` is worth adopting even if you have never used it. It resolves and installs dependencies
 in a fraction of the time of pip or poetry, manages the Python version itself, and produces a
-lockfile. On a Pi, where every install is slow, that difference is felt rather than measured.
+lockfile — which is also what makes the dependency layer of the image cacheable.
 
 ---
 
@@ -55,11 +59,11 @@ lockfile. On a Pi, where every install is slow, that difference is felt rather t
 | Layer | Choice | Why, and what else was considered |
 |---|---|---|
 | Language | Python 3.13 | The ecosystem for this problem (image handling, numerics, model SDKs) is Python. Nothing else is close. |
-| Packaging | `uv` | Fast, lockfile-based, manages the interpreter. Poetry works but is slower everywhere and much slower on the Pi. |
+| Packaging | `uv` | Fast, lockfile-based, manages the interpreter. Poetry works but is slower everywhere, including in the image build. |
 | Telegram | `aiogram` 3.x | Async-first, clean FSM for multi-step flows like recipe creation, and switching between polling and webhook is one line. `python-telegram-bot` is equally mature; pick either and do not revisit. |
 | Web | FastAPI | Serves the health ingest endpoint and the Mini App backend in one process. Async, and Pydantic models double as the model output schemas. |
 | ORM | SQLAlchemy 2.0 (async) | Typed, mature. Alembic for migrations is the real reason. |
-| Migrations | Alembic | Non-negotiable once real data exists on the Pi. |
+| Migrations | Alembic | Non-negotiable once real data exists in production. |
 | Database | Postgres 17 + pgvector 0.8.x | Official `pgvector/pgvector:pg17` image. See section 9 on whether you need vectors at all in Phase 1. |
 | Scheduler | APScheduler (MemoryJobStore) | Jobs do not survive restarts — a known gap. Code-as-job makes them testable; a Postgres jobstore is the obvious fix when restart resilience matters. |
 | Model calls | `openai` SDK against OpenRouter | OpenRouter is OpenAI-compatible. One SDK, `base_url` swapped. Already written in `config/models.py`. |
@@ -213,9 +217,10 @@ a mounted `pgpass`, so there is no login, no master password and no connection d
 small rituals that would otherwise be paid again every time the volume is recreated. The
 ready-made queries in `sql/` are mounted at `/sql` inside it and open from the Query Tool.
 
-It is deliberately absent from the Pi's `docker-compose.yml`. That machine holds real health data
-and is reachable over a tailnet; a second web UI carrying database credentials is attack surface
-bought for nothing, when `just psql` over ssh answers the same questions.
+It is deliberately a development-only service, and there is no production equivalent. The Railway
+database holds real health data; a second web UI carrying its credentials would be attack surface
+bought for nothing, when `just psql` against `DATABASE_PUBLIC_URL` answers the same questions and
+leaves nothing listening afterwards.
 
 ---
 
@@ -308,38 +313,33 @@ is no substitute for feeling how the interaction actually lands.
 
 ### 7.2 Health data
 
-**Tailscale is the answer, in dev and in prod.** Install it on the Mac, the Pi and the phone.
-Every device gets a stable address on your private tailnet, with no ports opened and no tunnel
-service in the path.
+The endpoint is public now, and that is a real change rather than a relocation. On the Pi it was
+bound to loopback and published to the tailnet by `tailscale serve`, path-scoped to
+`/ingest/health` so that `/webhook/telegram` and `/healthz` stayed invisible. On Railway there is
+one public domain and all three routes answer on it.
 
-Do not widen the container's port binding to reach it. Both compose files publish
-`127.0.0.1:8000:8000` and should stay that way; the tailnet exposure is a proxy on the host:
+What protects each one is therefore the route's own authentication rather than the network.
+`/webhook/telegram` compares Telegram's secret header with `hmac.compare_digest`; `/ingest/health`
+identifies the user by a per-user bearer token, compared the same way and never revealing whether
+a miss was an unknown token or an inactive user. `/healthz` is unauthenticated and says only
+whether the database is reachable.
 
-```bash
-tailscale serve --bg --set-path /ingest/health http://127.0.0.1:8000/ingest/health
-tailscale serve status      # prints the https://<host>.<tailnet>.ts.net URL
-```
-
-The flag spelling has moved between client versions, so `tailscale serve --help` outranks the
-line above; MagicDNS and HTTPS Certificates both need enabling in the admin console or `serve`
-will not bind TLS. The path scoping is deliberate — a bare proxy would publish `/webhook/telegram`
-and `/healthz` to every device on the tailnet as well. Widen it when the Mini App arrives.
-
-The alternative, publishing the container port on the host's `100.x` tailnet address, works but
-makes the compose file machine-specific, which is exactly the Mac-versus-Pi divergence the setup
-exists to avoid, and it gives plaintext HTTP where `serve` gives a real certificate. Binding
-`0.0.0.0` is worse still: the Pi sits on a home LAN, and the endpoint's only other protection is
-one static bearer token with no rate limiting.
+**The gap worth naming: there is no rate limiting on `/ingest/health`.** Behind a tailnet that did
+not matter, because reaching the port at all required being on the tailnet. It matters now, and
+the reason it is still absent is that the move was scoped to the move. The tokens are per user
+and rotatable from `/token`, which is what makes the current state defensible rather than
+comfortable.
 
 **Health Auto Export configuration.** One automation, REST API type, POST to
-`https://<host>.<tailnet>.ts.net/ingest/health`, with `Authorization: Bearer $HEALTH_INGEST_TOKEN`
-as a real header rather than a query parameter. Data type Health Metrics — workout payloads exist
-but `extract()` ignores them. **Aggregation hourly, chosen once and never changed:** an hourly
-bucket and a daily total both stamp local midnight, so switching later overwrites one hourly row
-with the whole day's figure while the other 23 survive, and the day reads roughly double. The
-`samples` column in `sql/steps.sql` is the tripwire that makes such a switch visible. The REST
-export is a paid feature; check the current price in the App Store rather than trusting a figure
-quoted here.
+`https://<your-service>.up.railway.app/ingest/health`, with `Authorization: Bearer <token>` as a
+real header rather than a query parameter — `/token` prints the URL and the token together, built
+from `TELEGRAM_WEBHOOK_URL`, so it is always the deployment's own address. Data type Health
+Metrics; workout payloads exist but `extract()` ignores them. **Aggregation hourly, chosen once
+and never changed:** an hourly bucket and a daily total both stamp local midnight, so switching
+later overwrites one hourly row with the whole day's figure while the other 23 survive, and the
+day reads roughly double. The `samples` column in `sql/steps.sql` is the tripwire that makes such
+a switch visible. The REST export is a paid feature; check the current price in the App Store
+rather than trusting a figure quoted here.
 
 Leave any "split by source" setting off. HealthKit already de-duplicates overlapping samples
 across devices when you read an aggregate; a per-source breakdown would put two rows on the same
@@ -521,61 +521,67 @@ than any bug.
 
 ---
 
-## 11. Mac to Pi
+## 11. Railway
 
-Both are arm64, so images are portable. Do not build on the Pi: it is slow and it puts a build
-toolchain on the machine holding your data.
+Production is Railway: one project, `UMAI`, holding two services — the bot and a Postgres built
+from the **pgvector** template rather than the standard one, because the initial migration runs
+`CREATE EXTENSION vector` and Railway's default Postgres image deliberately ships without it and
+is not going to gain it. `pg_trgm`, which the resolver actually depends on, comes with contrib
+either way.
 
-`.dockerignore` is load-bearing for build time rather than for correctness. The Dockerfile copies
-`src/`, `alembic/`, the lockfile and the README — about a megabyte — but the daemon receives the
-whole directory before the first `COPY` is evaluated, and unignored that was 509MB: a host
-virtualenv built for the wrong platform, the food photo archive, and the licensed PDFs under
-`docs/papers/`. Excluding them takes the context to 77 files and 1.2MB, most of it `uv.lock`.
-It excludes by denial rather than by allowlist, so a new source directory reaches the image by
-default and a new pile of data does not.
-
-The patterns are `**/`-prefixed wherever the target can nest, because **Docker does not match the
-way `.gitignore` does**: a bare `__pycache__/` matches only a top-level directory, so every
-nested one shipped regardless. That leak is invisible from the outside — the build succeeds, and
-the Dockerfile's explicit `COPY` keeps the junk out of the finished image — so the context size
-is the only symptom. To see what is actually being sent, build a throwaway
-`FROM busybox / COPY . /ctx / RUN find /ctx -type f` and read the list; the "transferring
-context" figure in normal build output is a BuildKit delta, not the total.
+The bot service is connected to the GitHub repository, so pushing to `main` is the deploy. It
+builds the Dockerfile, runs `alembic upgrade head` as a **pre-deploy command**, and replaces the
+container only if that succeeded. Pre-deploy is the right hook for migrations for the same
+reason they were never in the old compose file's start command: a crash loop would otherwise
+become a migration loop against real data. It also runs before volumes are mounted, which is
+harmless here because migrations touch only Postgres.
 
 ```mermaid
 flowchart LR
-    dev["MacBook<br/>arm64"] -->|"docker buildx<br/>--platform linux/arm64"| img["Image"]
-    img -->|push| ghcr[("GHCR<br/>private")]
-    ghcr -->|pull| pi["Raspberry Pi<br/>arm64"]
-    pi --> mig["alembic upgrade head<br/>one-shot container"]
-    mig --> up["docker compose up -d"]
+    dev["MacBook"] -->|"git push"| gh[("GitHub<br/>hakanotal/umai")]
+    gh -->|webhook| build["Railway build<br/>(Dockerfile)"]
+    build --> mig["pre-deploy<br/>alembic upgrade head"]
+    mig --> run["umai-bot<br/>webhook + scheduler"]
+    run --- db[("pgvector<br/>Postgres 17")]
 
     style dev fill:#1f2937,stroke:#4b5563,color:#e5e7eb
-    style pi fill:#312e2b,stroke:#57534e,color:#e7e5e4
-    style ghcr fill:#1e3a3a,stroke:#0f766e,color:#ccfbf1
+    style run fill:#312e2b,stroke:#57534e,color:#e7e5e4
+    style gh fill:#1e3a3a,stroke:#0f766e,color:#ccfbf1
+    style db fill:#1e3a3a,stroke:#0f766e,color:#ccfbf1
 ```
 
-```bash
-just build          # docker buildx build --platform linux/arm64 --push
-just deploy         # ssh pi 'cd umai && docker compose pull && \
-                    #   docker compose run --rm app alembic upgrade head && \
-                    #   docker compose up -d'
-```
+One service and one replica, deliberately. The process runs the aiogram bot, an in-process
+APScheduler and uvicorn on one event loop, and Telegram permits exactly one webhook consumer per
+token, so a second replica would not merely be wasteful — it would be a second bot. The photo
+directory is a Railway volume mounted at `/app/data/media`, which pins the service to one
+replica anyway. Because `media.path` holds a path relative to the working directory rather than
+an absolute one, that mount point makes every row written before the move keep resolving.
 
-Two differences between the environments, and only two, both in `.env`:
+Three platform details the code had to learn, all in `config/settings.py`:
 
-| | Dev (Mac) | Prod (Pi) |
+| | What Railway does | What the code does |
+|---|---|---|
+| DSN | publishes `postgresql://`, options spelled the libpq way | `normalise_async_dsn` puts the driver in the scheme and drops `sslmode`, which asyncpg rejects rather than ignores |
+| Port | assigns one and health-checks *that* port | `PORT` is an accepted fallback for `UMAI_HTTP_PORT` |
+| Bind | reaches the container over its own network | `UMAI_HTTP_HOST=0.0.0.0` as a variable, while the default stays loopback so the Mac does not quietly widen |
+
+The variables live on the service and nowhere else. `.env.example` remains the template for
+local development only.
+
+Two differences between the environments, and only two:
+
+| | Dev (Mac) | Prod (Railway) |
 |---|---|---|
 | Telegram | long polling, dev bot token | webhook, prod bot token |
-| Database | Docker, port 5433, throwaway | Docker on SSD, backed up nightly |
+| Database | Docker, port 5433, throwaway | pgvector template, backed up on a schedule |
 
 Everything else, including model IDs, schema and business logic, is identical. Keep it that way.
 Every divergence between dev and prod is a bug that only appears after deploy.
 
-**Before the first deploy, run the container locally.** `docker compose up` on the Mac using the
-production compose file catches the whole class of "works on the host, fails in the container"
-problems (missing system libraries, path assumptions, timezone data) while you can still see the
-logs in a terminal.
+**Before pushing, run the container locally.** `just docker-app` builds the same Dockerfile and
+runs it against the dev database, which catches the whole class of "works on the host, fails in
+the container" problems while you can still see the logs in a terminal rather than in a build
+log.
 
 ---
 
@@ -615,11 +621,21 @@ a bot feel broken.
 handler, never a module-level global. This bites everyone once.
 
 **Never run migrations automatically on container start.** A crash loop then becomes a migration
-loop against your real data. Run them as a separate one-shot step in the deploy recipe, as above.
+loop against your real data. On Railway they are the pre-deploy command, which runs once and
+gates the release rather than running on every restart of every replica.
 
-**Back up before the first real week of data, not after.** `pg_dump` plus the photo directory,
-encrypted, off the device, nightly. The most annoying possible outcome of this project is losing
-two months of logs to an SD card, which is also the most common way Pi projects end.
+**Railway's builder rejects `RUN --mount=type=cache`.** Docker derives a cache id from the target
+when none is given; Railway refuses with "flag ... is missing an id argument", and supplying an
+id does not help. The failure is invisible in the worst way: it happens before the build starts,
+so the deployment fails with a build log containing two "scheduling build" lines and nothing
+else, which looks exactly like a broken builder. If a deploy fails with an empty build log,
+suspect the Dockerfile's flags before suspecting the platform, and read `buildLogs` through the
+GraphQL API rather than the CLI, which showed less.
+
+**Back up before the first real week of data, not after.** Railway backs the volumes up on a
+schedule, which covers the database and the photos, but a backup you cannot restore without the
+provider is not the whole story: `just backup` pulls a `pg_dump` down to this machine. The most
+annoying possible outcome of this project is losing two months of logs to an account problem.
 
 ---
 
@@ -720,8 +736,9 @@ should still not survive to become a `ZoneInfoNotFoundError` inside a script.
 **`HEALTH_INGEST_TOKEN` is legacy.** The multi-user migration reads it once and writes it onto
 the oldest user's row, so an already-configured phone keeps posting unchanged with no legacy
 branch in the endpoint. After that the token is per user, `/token` shows it, and this variable
-can be deleted. A shared gate in front of a per-user secret adds nothing behind `tailscale serve`
-and guarantees somebody forgets to rotate it.
+can be deleted. A shared gate in front of a per-user secret adds nothing — it identifies nobody,
+which is the whole job of the token on this endpoint — and guarantees somebody forgets to rotate
+it.
 
 `UMAI_PROVIDER` is read by nothing — a dead template variable that can be removed.
 

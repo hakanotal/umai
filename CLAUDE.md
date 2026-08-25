@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-Umai is a self-hosted personal nutrition assistant (Telegram bot on a Raspberry Pi). Read a
+Umai is a self-hosted personal nutrition assistant (Telegram bot, deployed on Railway). Read a
 module's docstring before writing into it — each one records the constraint that module exists to
 honour.
 
 | File | What it settles |
 |---|---|
 | `docs/umai-project-plan.md` | Product design. §3 calibration, §4 estimation pipeline, §6.3 data model, §7 roadmap. |
-| `docs/technical-implementation.md` | Stack, repo layout, dev loop, testing strategy, Mac→Pi deploy, gotchas. |
+| `docs/technical-implementation.md` | Stack, repo layout, dev loop, testing strategy, the Railway deploy, gotchas. |
 | `docs/progress.md` | One-page done / in-progress / todo, kept current. |
 | `src/umai/config/models.py` | Model tiers, per-task routing, capability quirks. |
 | `docs/papers/README.md` | The 29-paper evidence base, indexed by the design decision each supports. |
@@ -91,8 +91,8 @@ Food and Nutrient Database for Dietary Studies, seeded from a CSV bundle into
 never imports it — so it only populates `foods` after the fact. If `fndds_foods` was
 never seeded, `fndds_search` returns nothing silently.
 
-**Steps** land via Health Auto Export over `tailscale serve` (never by widening the container's
-loopback bind) and are read per *local* day by `tools.daily_steps` / `tools.steps_by_day`,
+**Steps** land via Health Auto Export, posted to the service's public `/ingest/health` and
+authenticated by a per-user bearer token, and are read per *local* day by `tools.daily_steps` / `tools.steps_by_day`,
 aggregated on the fly rather than materialised into `daily_rollups`, which stays unwritten.
 `DaySteps.samples` is the tripwire for an export-granularity switch, which would otherwise double
 a day silently. **`None` and `0` are different answers**: `calibration.activity_offset_kcal` reads
@@ -107,12 +107,21 @@ and one a literal, is the concrete shape the trap will take.
 
 Not yet written: Mini App frontend, `tools/benchmark_perception.py` (the docstring-only stub
 was removed — an empty file that claims to be a tool is worse than an absent one).
-Analytics beyond the static Phase 1 target is deliberately deferred until real history exists
-(deployment target is the Pi; calibration needs weeks of data first).
+Analytics beyond the static Phase 1 target is deliberately deferred until real history exists:
+calibration needs weeks of data first.
 
-**Deploy note:** the Pi is the target. Dev runs long polling on the Mac; the Pi runs the same
-image with `UMAI_ENV=prod` (webhook + Tailscale for the ingest endpoint). Nothing Pi-specific
-may enter the code; the only divergences are env vars.
+**Deploy note:** Railway is the target — project `UMAI`, service `umai-bot` (connected to
+`hakanotal/umai`, so a push to `main` deploys) plus a `pgvector` Postgres, which is the template
+the initial migration's `CREATE EXTENSION vector` requires; Railway's default Postgres has no
+pgvector. Dev runs long polling on the Mac; Railway runs the same image with `UMAI_ENV=prod`
+(webhook, and the ingest endpoint on a public domain). Nothing platform-specific may enter the
+code; the only divergences are env vars, and in prod they are Railway variables rather than a
+file. **One replica, always** — the process holds the bot, the scheduler and uvicorn on one loop,
+and Telegram allows one webhook consumer per token, so a second replica is a second bot. Two
+traps worth knowing before touching the Dockerfile or the port: Railway's builder rejects
+`RUN --mount=type=cache` (with an empty build log, which reads as a broken builder), and it
+assigns the port it health-checks, so `PORT` must win unless `UMAI_HTTP_PORT` deliberately
+matches it.
 
 ## The calibration finding (read before touching analytics)
 

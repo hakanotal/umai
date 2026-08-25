@@ -1,7 +1,6 @@
 # UMAI: Personal AI Nutrition & Health Assistant
 
-**A self-hosted, always-on personal dietitian running on a Raspberry Pi, accessible entirely
-through Telegram.**
+**A self-hosted, always-on personal dietitian, accessible entirely through Telegram.**
 
 Umai is a personal nutrition and health assistant that lives on your own hardware. You send it
 a photo of a meal; it identifies the items, estimates the grams, resolves each against a food
@@ -59,21 +58,28 @@ health data.
 
 ## Deploying
 
-The Raspberry Pi runs the same image with `UMAI_ENV=prod`, which switches Telegram from long
-polling to a webhook. Nothing in the code is Pi-specific; the only divergences are environment
-variables. The health ingest endpoint stays bound to loopback and is reached over
-`tailscale serve` rather than by widening the bind.
+Railway runs the same image with `UMAI_ENV=prod`, which switches Telegram from long polling to
+a webhook. Nothing in the code is platform-specific; the only divergences are environment
+variables, which live as Railway variables rather than in a file. Pushing to `main` is the
+deploy: the service builds the Dockerfile, runs `alembic upgrade head` as a pre-deploy step,
+and only then replaces the running container.
 
 ```bash
-just build && just deploy
+git push          # the ordinary path
+just deploy       # build from the working tree, for a hotfix you have not pushed
+just logs
 ```
+
+The health ingest endpoint is a real HTTPS URL now rather than something reached over a
+tailnet, which is the first time a phone has been able to post to it. It is protected by a
+per-user bearer token and nothing else — there is no rate limiting on it yet.
 
 ## The documentation
 
 | File | What it settles |
 |---|---|
 | `docs/umai-project-plan.md` | Product design: calibration, the estimation pipeline, the data model, the roadmap. |
-| `docs/technical-implementation.md` | Stack, repo layout, dev loop, testing, Mac→Pi deploy, and the gotcha list. |
+| `docs/technical-implementation.md` | Stack, repo layout, dev loop, testing, the Railway deploy, and the gotcha list. |
 | `docs/progress.md` | One page: done, in progress, todo. |
 | `CLAUDE.md` | The architectural invariants, and what changing one costs. |
 | `sql/README.md` | Ready-made inspection queries, mounted into pgAdmin at `/sql`. |
