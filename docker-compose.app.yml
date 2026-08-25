@@ -1,11 +1,21 @@
 # The app in a container, on the Mac, against the dev database.
 #
 # This is the "run the production image locally" step from
-# docs/technical-implementation.md section 11: it catches the whole class of
-# "works on the host, fails in the container" problems while the logs are still
-# on your screen, before anything reaches the Pi.
+# docs/technical-implementation.md section 11: it builds the same Dockerfile
+# Railway builds and runs it against the dev database, which catches the whole
+# class of "works on the host, fails in the container" problems while the logs
+# are still on your screen rather than in a build log. It is the only compose
+# file left that touches the application; production is Railway.
 #
-# Differences from docker-compose.yml (the Pi file), and why:
+# What it deliberately does not reproduce: Railway supplies the port through
+# PORT, mounts the media volume at /app/data/media, and runs migrations as a
+# pre-deploy step. Here the port is fixed, media is a bind mount, and
+# migrations stay an explicit one-shot — never on start, for the same reason
+# they are pre-deploy rather than baked into CMD, that a crash loop otherwise
+# becomes a migration loop against real data:
+#   docker compose -f docker-compose.app.yml run --rm app alembic upgrade head
+#
+# Differences from a plain `docker run`, and why:
 #   * build: .            — no registry round-trip for a local run
 #   * no db service       — it uses the dev Postgres from
 #                           docker-compose.dev.yml (port 5433, with the
@@ -13,9 +23,6 @@
 #   * DATABASE_URL points at host.docker.internal, not localhost
 #   * UMAI_HTTP_HOST=0.0.0.0 inside the container; the port mapping keeps it
 #     host-only. Binding 127.0.0.1 inside a container would be unreachable.
-#
-# Migrations still run as an explicit one-shot, never on start:
-#   docker compose -f docker-compose.app.yml run --rm app alembic upgrade head
 services:
   app:
     build: .
@@ -27,9 +34,8 @@ services:
       UMAI_HTTP_HOST: 0.0.0.0
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Loopback. To let the phone reach the ingest endpoint over Tailscale,
-    # proxy to it from the host rather than widening this bind:
-    #   tailscale serve --bg --set-path /ingest/health http://127.0.0.1:8000/ingest/health
+    # Loopback, and it can stay that way: nothing needs to reach this from
+    # another device. The phone posts to the Railway domain, not to the Mac.
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

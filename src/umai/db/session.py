@@ -44,7 +44,7 @@ def init_engine(settings: Settings) -> AsyncEngine:
         settings.database_url,
         echo=False,
         pool_pre_ping=True,
-        # A Pi with one user does not need a large pool, and a small one makes
+        # One always-on instance does not need a large pool, and a small one makes
         # a leaked session show up immediately instead of at 3am.
         pool_size=5,
         max_overflow=5,

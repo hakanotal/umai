@@ -1,7 +1,7 @@
 """Application settings, env-driven, via pydantic-settings.
 
 Mirrors .env.example. The only two values that genuinely differ between the Mac
-and the Pi are the Telegram mode and the database URL; every divergence beyond
+and Railway are the Telegram mode and the database URL; every divergence beyond
 those is a bug that only appears after deploy.
 """
 
@@ -11,8 +11,43 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar, Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Query parameters libpq understands and asyncpg does not. asyncpg rejects an
+# unknown keyword rather than ignoring it, so leaving one in place is a
+# connection error at startup, not a warning.
+_LIBPQ_ONLY_PARAMS = ("sslmode=", "channel_binding=", "target_session_attrs=")
+
+
+def normalise_async_dsn(url: str) -> str:
+    """Rewrite a libpq-style DSN into one asyncpg can actually open.
+
+    Railway, like most managed Postgres, publishes `postgresql://...` and
+    spells its options the way libpq spells them. SQLAlchemy needs the driver
+    named in the scheme, and asyncpg refuses `sslmode` outright, so a DSN
+    pasted straight from the provider fails twice over: once in
+    `create_async_engine`, and again in alembic's `env.py`, which reads the
+    environment variable directly and would otherwise be a second place to
+    remember.
+
+    Deliberately not a rewrite of the whole URL through urllib: the password
+    is in there, percent-encoded, and round-tripping it through a parser is a
+    way to corrupt a credential for no gain. Scheme and query are the only two
+    parts that need touching.
+    """
+    if not url:
+        return url
+
+    scheme, sep, rest = url.partition("://")
+    if sep and scheme in {"postgres", "postgresql"}:
+        url = f"postgresql+asyncpg://{rest}"
+
+    head, sep, query = url.partition("?")
+    if not sep:
+        return url
+    kept = [part for part in query.split("&") if part and not part.startswith(_LIBPQ_ONLY_PARAMS)]
+    return f"{head}?{'&'.join(kept)}" if kept else head
 
 
 class Settings(BaseSettings):
@@ -60,7 +95,14 @@ class Settings(BaseSettings):
     health_ingest_token: str = Field(default="", alias="HEALTH_INGEST_TOKEN")
     media_dir: Path = Field(default=Path("./data/media"), alias="MEDIA_DIR")
     http_host: str = Field(default="127.0.0.1", alias="UMAI_HTTP_HOST")
-    http_port: int = Field(default=8000, alias="UMAI_HTTP_PORT")
+    # `PORT` is the fallback because that is the name Railway injects, and a
+    # platform-assigned port is not something anybody should have to copy into
+    # a second variable by hand. UMAI_HTTP_PORT still wins when both are set,
+    # so a local override survives being run somewhere that also sets PORT.
+    http_port: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("UMAI_HTTP_PORT", "PORT"),
+    )
 
     # --- Locale ------------------------------------------------------------
     # Demoted, deliberately. This used to seed every new user row's timezone,
@@ -82,6 +124,20 @@ class Settings(BaseSettings):
     # cuisines — which were one person's body and are now columns on `users`,
     # filled in by the wizard.
     water_target_ml: float = Field(default=2500.0, alias="UMAI_WATER_TARGET_ML")
+
+    @field_validator("database_url")
+    @classmethod
+    def _asyncpg_dsn(cls, v: str) -> str:
+        """Accept the DSN a managed provider hands you, unmodified.
+
+        Belt and braces: the Railway variable is written with the `+asyncpg`
+        scheme already, so this normally changes nothing. It exists so that
+        pointing `DATABASE_URL` at a reference variable, a connection string
+        copied out of a dashboard, or a different provider entirely is a
+        working configuration rather than an `InvalidRequestError` about an
+        unknown dialect.
+        """
+        return normalise_async_dsn(v)
 
     @field_validator("bootstrap_admin_telegram_id", mode="before")
     @classmethod

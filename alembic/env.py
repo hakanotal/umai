@@ -20,8 +20,14 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # The URL lives in the environment, never in alembic.ini, so the same file
-# works unchanged on the Mac and on the Pi.
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# works unchanged on the Mac and on Railway. Normalised on the way in for the
+# same reason Settings normalises it: the pre-deploy migration step and the
+# application read the variable independently, and only one of them going
+# through pydantic would make a plain `postgresql://` work in one and fail in
+# the other.
+from umai.config.settings import normalise_async_dsn  # noqa: E402
+
+config.set_main_option("sqlalchemy.url", normalise_async_dsn(os.environ["DATABASE_URL"]))
 
 from umai.db.models import Base  # noqa: E402
 

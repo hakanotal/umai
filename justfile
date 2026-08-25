@@ -7,9 +7,6 @@ set dotenv-load := true
 # scripts reading os.environ directly (preflight, eval, tools/perceive.py).
 set dotenv-path := ".local.env"
 
-PI := env_var_or_default("UMAI_PI_HOST", "pi")
-IMAGE := env_var_or_default("UMAI_IMAGE", "ghcr.io/OWNER/umai:latest")
-
 default:
     @just --list --unsorted
 
@@ -52,8 +49,8 @@ q-check:
 dev: db
     uv run python -m umai
 
-# The app in a container on the Mac, against the dev DB (verify-before-the-Pi
-# from docs/technical-implementation.md section 11). Needs `just db` running.
+# The app in a container on the Mac, against the dev DB — the same Dockerfile
+# Railway builds, run where you can still see the logs. Needs `just db`.
 docker-app: db
     docker compose -f docker-compose.app.yml up -d --build
 
@@ -194,22 +191,35 @@ sim days="90" tdee="2400" bias="0.78":
     uv run python tools/simulate.py run --history sim_{{days}}d.json
 
 # --- deploy ----------------------------------------------------------------
+#
+# Production is Railway, project UMAI, one service. The normal way to ship is
+# to push to main: the service is connected to the GitHub repo and builds the
+# Dockerfile named in railway.json, which also carries the pre-deploy
+# `alembic upgrade head`. The recipes below are for the times you want to
+# bypass that, or to look at what is running.
 
-build:
-    docker buildx build --platform linux/arm64 -t {{IMAGE}} --push .
-
-# Verify the production image on the Mac before it ever reaches the Pi.
+# Verify the image on the Mac before pushing. Same Dockerfile Railway builds.
 smoke:
-    docker compose up --build
+    docker compose -f docker-compose.app.yml up --build
 
-deploy: build
-    ssh {{PI}} 'cd umai && docker compose pull && \
-        docker compose run --rm app alembic upgrade head && \
-        docker compose up -d'
+# Build and deploy from the working tree, uncommitted changes included. Useful
+# for a hotfix you have not pushed; `git push` is the ordinary path.
+deploy:
+    railway up --service umai
 
 logs:
-    ssh {{PI}} 'cd umai && docker compose logs -f --tail=100'
+    railway logs --service umai
 
+# Railway backs the volume up on a schedule; this is the copy you hold. Needs
+# the Postgres service to have a TCP proxy — `railway variables --service
+# Postgres` shows DATABASE_PUBLIC_URL if it does.
 backup:
-    ssh {{PI}} 'cd umai && docker compose exec -T db pg_dump -U umai umai | gzip' \
+    mkdir -p backups
+    railway run --service Postgres -- \
+        sh -c 'pg_dump "$DATABASE_PUBLIC_URL" | gzip' \
         > backups/umai-$(date +%Y%m%d).sql.gz
+
+# What is deployed, and what it costs.
+status:
+    railway status
+    railway variables --service umai --kv | cut -d= -f1

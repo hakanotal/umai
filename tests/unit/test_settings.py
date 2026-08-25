@@ -87,9 +87,15 @@ def test_startup_refuses_without_an_invite_phrase():
     assert any("UMAI_INVITE_CODE" in p for p in problems)
 
 
-def test_startup_refuses_without_a_bootstrap_admin():
+def test_startup_refuses_without_a_bootstrap_admin(monkeypatch):
     """Nobody to admit anybody. A fresh deployment with no admin has no way to
-    ever gain one, because admitting is what an admin is for."""
+    ever gain one, because admitting is what an admin is for.
+
+    The env var is cleared explicitly because `_env_file=None` only stops
+    pydantic reading the *files* — os.environ is still a source, and `just`
+    loads .local.env into it before pytest starts. Without this the test read
+    the developer's own admin id and concluded the setting was configured."""
+    monkeypatch.delenv("UMAI_BOOTSTRAP_ADMIN_TELEGRAM_ID", raising=False)
     problems = Settings(
         _env_file=None,
         TELEGRAM_BOT_TOKEN="x",
@@ -145,3 +151,63 @@ def test_the_whole_template_loads_and_says_what_is_missing():
     assert {"TELEGRAM_BOT_TOKEN", "UMAI_INVITE_CODE", "OPENROUTER_API_KEY"} <= {
         w for p in problems for w in p.split() if w.isupper()
     }
+
+
+# --- the DSN a managed provider actually hands you --------------------------
+#
+# Railway publishes `postgresql://...`, which SQLAlchemy reads as the psycopg2
+# dialect and then fails to import, and it spells connection options the way
+# libpq does, which asyncpg rejects as unknown keywords. Neither failure is
+# visible until something opens a connection — in the deployed case, inside the
+# pre-deploy migration step, where the error is a stack trace in a build log.
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        # the two schemes a provider hands out
+        ("postgresql://u:p@h:5432/d", "postgresql+asyncpg://u:p@h:5432/d"),
+        ("postgres://u:p@h:5432/d", "postgresql+asyncpg://u:p@h:5432/d"),
+        # already correct: left exactly alone
+        ("postgresql+asyncpg://u:p@h:5432/d", "postgresql+asyncpg://u:p@h:5432/d"),
+        # libpq-only options, alone and alongside one asyncpg understands
+        ("postgresql://u:p@h/d?sslmode=require", "postgresql+asyncpg://u:p@h/d"),
+        (
+            "postgresql://u:p@h/d?sslmode=require&application_name=umai",
+            "postgresql+asyncpg://u:p@h/d?application_name=umai",
+        ),
+        # empty stays empty rather than becoming a scheme with nothing after it
+        ("", ""),
+    ],
+)
+def test_dsn_normalisation(given, expected):
+    from umai.config.settings import normalise_async_dsn
+
+    assert normalise_async_dsn(given) == expected
+
+
+def test_a_password_with_url_syntax_in_it_survives():
+    """The reason this is string surgery and not a urllib round-trip.
+
+    Generated passwords contain `/`, `?` and `%` often enough that reassembling
+    the URL through a parser is a way to corrupt a credential, and the symptom
+    would be an authentication failure nobody traces back to here."""
+    from umai.config.settings import normalise_async_dsn
+
+    dsn = "postgresql://umai:pa%2Fss%3Fword@h:5432/d"
+    assert normalise_async_dsn(dsn) == "postgresql+asyncpg://umai:pa%2Fss%3Fword@h:5432/d"
+
+
+def test_the_setting_normalises_on_load():
+    assert settings(DATABASE_URL="postgresql://u:p@h/d").database_url == (
+        "postgresql+asyncpg://u:p@h/d"
+    )
+
+
+def test_railway_port_is_the_fallback_and_never_the_override():
+    """Railway assigns the port; nobody should have to copy it into a second
+    variable. An explicit UMAI_HTTP_PORT still wins, so running locally
+    somewhere that also sets PORT does not move the bind."""
+    assert settings(PORT="4321").http_port == 4321
+    assert settings(PORT="4321", UMAI_HTTP_PORT="8000").http_port == 8000
+    assert settings().http_port == 8000
