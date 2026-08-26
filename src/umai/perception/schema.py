@@ -100,21 +100,8 @@ class PerceptionResult(BaseModel):
     overall_confidence: float = Field(default=0.0, ge=0, le=1)
 
     @property
-    def total_grams(self) -> float:
-        return sum(i.grams for i in self.items)
-
-    @property
     def weakest_grams_confidence(self) -> float:
         return min((i.grams_confidence for i in self.items), default=0.0)
-
-    def needs_confirmation(self, threshold: float = 0.75) -> bool:
-        """Whether to ask before logging.
-
-        The eval harness decides the threshold: at a ratio SD above 0.20 the
-        plan's instruction is to always confirm grams and never log a photo
-        silently, which is what a threshold of 1.0 expresses.
-        """
-        return self.weakest_grams_confidence < threshold or self.overall_confidence < threshold
 
 
 def request_schema() -> dict[str, Any]:

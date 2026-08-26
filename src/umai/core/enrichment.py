@@ -106,20 +106,9 @@ from umai.db.models import (
 
 log = logging.getLogger(__name__)
 
-# Give up after this many rejected attempts at one name. A dish the model
-# cannot describe consistently three times running is not going to become
-# describable on the fourth, and each attempt costs a call to the most
-# expensive model configured.
 MAX_ATTEMPTS = 3
-
-# How many gaps one tick researches. Small on purpose: the job runs often, the
-# work is not urgent, and a burst of twenty calls to the coach tier is a
-# noticeable line on a monthly bill that is supposed to read $1.36.
 BATCH = 4
-
-# Postgres advisory lock key, so two processes (or a scheduled tick overlapping
-# a nudge) cannot research the same gaps concurrently. Arbitrary constant;
-# the only requirement is that nothing else in the database uses it.
+# Postgres advisory lock key so two processes cannot research the same gaps.
 LOCK_KEY = 0x756D_6169_0001
 
 
@@ -284,17 +273,8 @@ SCHEMA: dict[str, Any] = {
 
 # --- validation, the part that matters -------------------------------------
 
-# Nothing eaten is denser in energy than pure fat. 920 rather than 900 for one
-# concrete reason: USDA's own FNDDS row for lard is 902 kcal/100g, and every
-# seed oil sits at exactly 900, so a ceiling of 900 rejects measured data at
-# the boundary. It is the only row of 5,431 that exceeds it, but rejecting a
-# real USDA row as a "units error" is the wrong failure. The gate is here to
-# catch a units error or an invention, both of which are wrong by a factor of
-# ten, not by two per cent.
+# Nothing eaten is denser than pure fat. 920 not 900: USDA lard is 902.
 MAX_KCAL_PER_100G = 920.0
-# Below this and it is water with a flavour, which is possible (tea, broth) but
-# is also what a model returns when it has no idea. Allowed, but it must still
-# reconcile.
 MIN_CONFIDENCE = 0.35
 
 # Atwater tolerance. Generous on purpose: fibre is counted differently across

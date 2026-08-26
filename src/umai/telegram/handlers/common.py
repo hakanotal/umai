@@ -35,13 +35,6 @@ class Awaiting(StatesGroup):
     recipe_ingredients = State()
 
 
-def sender_id(message: Message) -> int:
-    """from_user is Optional in aiogram's types; the allowlist middleware has
-    already rejected anything without a sender, so this assert is for mypy."""
-    assert message.from_user is not None
-    return message.from_user.id
-
-
 def cb_data(callback: CallbackQuery) -> str:
     assert callback.data is not None  # guarded by the F.data filters
     return callback.data

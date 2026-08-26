@@ -195,6 +195,41 @@ async def test_a_bad_secret_is_rejected_and_nothing_is_spawned(settings):
     assert dispatcher.fed == []
 
 
+async def test_a_body_that_is_not_an_object_is_rejected(settings):
+    """`request.json()` will happily return a list. `.get` on one is an
+    AttributeError and a 500; a caller holding the secret should still not be
+    able to produce one."""
+    dispatcher = FakeDispatcher()
+    app = _app(settings, dispatcher)
+    async with await _client(app) as client:
+        response = await client.post(
+            "/webhook/telegram",
+            json=[1, 2, 3],
+            headers={"X-Telegram-Bot-Api-Secret-Token": SECRET},
+        )
+    assert response.status_code == 400
+    assert dispatcher.fed == []
+
+
+# --- shutdown ---------------------------------------------------------------
+
+
+async def test_shutdown_waits_for_an_update_still_in_flight(settings):
+    """Moving the handler off the request took it out from under uvicorn's
+    graceful shutdown, which waits for in-flight requests and knows nothing
+    about a task. Without the drain a deploy mid-photo drops the photo."""
+    from asgi_lifespan import LifespanManager
+
+    dispatcher = FakeDispatcher(delay=0.2)
+    app = _app(settings, dispatcher)
+
+    async with LifespanManager(app):
+        async with await _client(app) as client:
+            await _post(client, _update(5))
+        assert dispatcher.fed == []
+    assert dispatcher.fed == [5], "shutdown abandoned an update that was still running"
+
+
 # --- the registry itself ----------------------------------------------------
 
 

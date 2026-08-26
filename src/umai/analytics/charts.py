@@ -243,32 +243,3 @@ def week_overview(
         text.set_fontfamily(FONT)
         text.set_color(theme.INK)
     return _png(fig)
-
-
-def weight_trend(days: list[dt.date], raw: list[float | None], ewma: list[float]) -> bytes:
-    """Raw readings as faint dots, the EWMA as the line. The trend is the
-    product; the dots are there to show what it is made of."""
-    fig, ax = _figure((7.6, 3.2))
-    xs_raw = [d.toordinal() for d, r in zip(days, raw, strict=True) if r is not None]
-    ys_raw = [r for r in raw if r is not None]
-    ax.yaxis.grid(True, color=theme.LINE, lw=0.8)
-    ax.scatter(xs_raw, ys_raw, s=14, color=theme.SAGE, zorder=2, label="weigh-ins")
-    ax.plot(
-        [d.toordinal() for d in days],
-        ewma,
-        color=theme.GREEN,
-        lw=2.2,
-        zorder=3,
-        label="trend",
-    )
-    ax.set_ylabel("kg", color=theme.MUTED, fontsize=9, fontfamily=FONT)
-    step = max(1, len(days) // 8)
-    ax.set_xticks([d.toordinal() for d in days][::step])
-    ax.set_xticklabels([f"{d:%d %b}" for d in days][::step])
-    for tick in ax.get_xticklabels():
-        tick.set_fontfamily(FONT)
-    legend = ax.legend(frameon=False, fontsize=8.5, loc="best")
-    for text in legend.get_texts():
-        text.set_fontfamily(FONT)
-        text.set_color(theme.INK)
-    return _png(fig)

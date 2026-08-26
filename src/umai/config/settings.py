@@ -67,14 +67,6 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = Field(default="", alias="TELEGRAM_WEBHOOK_SECRET")
 
     # --- Access ------------------------------------------------------------
-    # The phrase a stranger has to send before the bot will talk to them. This
-    # replaced an allowlist of numeric Telegram ids, which meant admitting
-    # somebody was an edit to .env and a restart.
-    #
-    # Never stored: it lives here, `tokens.phrase_matches` compares against it,
-    # and no row holds a copy. Rotating it is an edit and a restart, which is
-    # the trade for not having a table of codes to manage — and it locks out
-    # nobody who is already through, because admission is recorded on the row.
     invite_phrase: str = Field(default="", alias="UMAI_INVITE_CODE")
     # The one id that skips the phrase. Without it the first run of a fresh
     # deployment has nobody who can admit anybody, including themselves.
@@ -105,16 +97,6 @@ class Settings(BaseSettings):
     )
 
     # --- Locale ------------------------------------------------------------
-    # Demoted, deliberately. This used to seed every new user row's timezone,
-    # which is exactly the "plausible-looking wrong default" the person fields
-    # below refused to have — silently giving a stranger the operator's city
-    # and therefore the operator's idea of when their day starts. The zone is a
-    # per-user column now, asked for by the onboarding wizard.
-    #
-    # What is left is a process-level default: log timestamps, and the headless
-    # scripts in tools/ that have no user to ask. Nothing seeds from it, and
-    # the scheduler no longer reads it at all, because an interval trigger has
-    # no zone.
     tz: str = Field(default="", alias="TZ")
 
     # --- Defaults for a new person -----------------------------------------

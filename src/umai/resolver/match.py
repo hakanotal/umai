@@ -22,7 +22,7 @@ from sqlalchemy import Float, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from umai.config.models import ModelClient
-from umai.db.models import Food, FoodLibrary, FoodSource, FoodState, Recipe, ResolutionMethod
+from umai.db.models import Food, FoodLibrary, FoodState, Recipe, ResolutionMethod
 
 log = logging.getLogger(__name__)
 
@@ -301,41 +301,6 @@ class Resolver:
             confidence=min(confidence, 0.95),
             candidates=tuple(candidates),
         )
-
-    # --- d. new entry ------------------------------------------------------
-
-    async def create_provisional(
-        self,
-        name: str,
-        state: FoodState,
-        macros_per_100g: tuple[float, float, float, float],
-    ) -> Food:
-        """A tier 4 row: model-generated, provisional, flagged for verification.
-
-        Inevitable and useful, but never silently treated as fact. The
-        calibration engine excludes windows these dominate.
-
-        Note that the *production* tier-4 path is `core/enrichment.py`, which
-        runs off the critical path and validates the composition arithmetically
-        before writing. This constructor stays because the label-photo importer
-        needs it and because it is the honest expression of what a tier-4 row
-        is; it is not the path a missed photo item takes.
-        """
-        kcal, protein, carbs, fat = macros_per_100g
-        food = Food(
-            canonical_name_en=name,
-            aliases=[],
-            state=state,
-            kcal_per_100g=kcal,
-            protein_g_per_100g=protein,
-            carbs_g_per_100g=carbs,
-            fat_g_per_100g=fat,
-            source=FoodSource.model,
-            trust_tier=4,
-        )
-        self._db.add(food)
-        await self._db.flush()
-        return food
 
 
 def _from(c: Candidate, method: ResolutionMethod, candidates: list[Candidate]) -> Resolution:

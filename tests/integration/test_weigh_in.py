@@ -140,7 +140,7 @@ async def test_two_users_do_not_correct_each_other(session, user, other_user):
 async def test_previous_weight_skips_a_correction(session, user):
     """The bug a user would actually notice.
 
-    `previous_weight` feeds the "↓ 0.3 vs last" line. With the corrected row
+    `latest_weight` feeds the "↓ 0.3 vs last" line. With the corrected row
     still live it compared against the typo the user had replaced seconds
     earlier, so a fix reported a delta of roughly zero against itself.
     """
@@ -149,7 +149,6 @@ async def test_previous_weight_skips_a_correction(session, user):
     await tools.log_weight(session, user, kg=89.5, occurred_at=_at(23, 7, 30))  # the fix
 
     assert await tools.latest_weight(session, user.id) == pytest.approx(89.5)
-    assert await tools.previous_weight(session, user.id) == pytest.approx(90.0)
 
 
 async def test_an_implausible_weight_never_reaches_the_database(session, user):
@@ -251,12 +250,12 @@ async def test_a_later_sync_never_overrides_a_manual_weigh_in(session, user):
     assert await tools.latest_weight(session, user.id) == pytest.approx(89.0)
 
 
-async def test_synced_weight_does_not_pollute_the_previous_reading(session, user):
+async def test_synced_weight_does_not_pollute_the_latest_reading(session, user):
     await tools.log_weight(session, user, kg=90.0, occurred_at=_at(22, 7))
     await tools.log_weight(session, user, kg=89.0, occurred_at=_at(23, 7))
     await _sync_a_weight(session, user, 95.0, _at(23, 12))
 
-    assert await tools.previous_weight(session, user.id) == pytest.approx(90.0)
+    assert await tools.latest_weight(session, user.id) == pytest.approx(89.0)
 
 
 async def test_the_synced_weight_is_still_kept_and_exported(session, user):

@@ -40,7 +40,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import Insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from umai.analytics import safety
@@ -251,11 +251,6 @@ async def _macros_for(
     )
 
 
-# ---------------------------------------------------------------------------
-# The personal learning layer
-# ---------------------------------------------------------------------------
-
-
 async def remember(session: AsyncSession, user_id: uuid.UUID, meal: LoggedMeal) -> None:
     """Record what was logged into the library and the portion priors.
 
@@ -422,11 +417,6 @@ async def portion_priors(
     }
 
 
-# ---------------------------------------------------------------------------
-# Food library: the user's most-logged items, surfaced for one-tap re-logging
-# ---------------------------------------------------------------------------
-
-
 @dataclass(slots=True)
 class LibraryItem:
     """A food the user has logged before, with its typical serving."""
@@ -473,11 +463,6 @@ async def user_library(
         )
         for r in rows
     ]
-
-
-# ---------------------------------------------------------------------------
-# Dinnerware: measured once, used in every photo prompt
-# ---------------------------------------------------------------------------
 
 
 async def add_dinnerware(
@@ -536,11 +521,6 @@ async def list_dinnerware(
         )
     ).scalars()
     return {d.name: d.description for d in rows}
-
-
-# ---------------------------------------------------------------------------
-# Corrections: immutable, traceable
-# ---------------------------------------------------------------------------
 
 
 async def supersede_with_grams(
@@ -629,8 +609,6 @@ async def supersede_with_grams(
     return meal
 
 
-# ---------------------------------------------------------------------------
-# Editing and removing today's entries
 # ---------------------------------------------------------------------------
 
 
@@ -826,11 +804,7 @@ async def edit_water(
 # ---------------------------------------------------------------------------
 
 
-# Weight is deliberately absent: it goes through `log_weight`, which keeps one
-# live reading per local day. Water accumulates across a day and supplements
-# and moods are events, so appending is right for those; a body weight is a
-# measurement with one true answer per morning, and a second one is a
-# correction rather than a second fact.
+# Weight goes through `log_weight` (one per day). These are append-only kinds.
 _SIMPLE_KINDS = (
     EntryKind.water,
     EntryKind.supplement,
@@ -1034,11 +1008,6 @@ async def day_totals(
     )
 
 
-# ---------------------------------------------------------------------------
-# Steps: the activity signal, read per local day
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class DaySteps:
     """One local day's step count, with enough context to distrust it.
@@ -1150,12 +1119,6 @@ async def latest_weight(session: AsyncSession, user_id: uuid.UUID) -> float | No
     """
     rows = await _weight_rows(session, user_id, 1)
     return rows[0] if rows else None
-
-
-async def previous_weight(session: AsyncSession, user_id: uuid.UUID) -> float | None:
-    """The reading before the latest one, for the ↓/↑ in the weigh-in reply."""
-    rows = await _weight_rows(session, user_id, 2)
-    return rows[1] if len(rows) > 1 else None
 
 
 async def _weight_rows(session: AsyncSession, user_id: uuid.UUID, limit: int) -> list[float]:
@@ -1357,17 +1320,3 @@ async def load_user(session: AsyncSession, user_id: uuid.UUID) -> User:
     if user is None:
         raise RuntimeError(f"no user row for {user_id}; the access middleware should have made one")
     return user
-
-
-# ---------------------------------------------------------------------------
-# The service bundle handed to handlers and jobs
-# ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class Services:
-    """Everything a handler needs, so no handler reaches for a global."""
-
-    settings: Settings
-    session_factory: async_sessionmaker[AsyncSession]
-    clock: Clock

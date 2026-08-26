@@ -14,7 +14,6 @@ from umai.resolver.compute import (
     Macros,
     absorbed_oil_grams,
     compute,
-    cooked_equivalent,
     ml_to_grams,
     per_100g,
     raw_equivalent,
@@ -126,11 +125,6 @@ def test_boiled_rice_is_not_raw_rice():
     assert naive == pytest.approx(648.0)
     assert correct == pytest.approx(240.0, rel=0.01)
     assert naive / correct == pytest.approx(2.7, rel=0.01)
-
-
-def test_raw_and_cooked_equivalents_are_inverses():
-    for yf in (0.75, 1.0, 2.7, 3.0):
-        assert cooked_equivalent(raw_equivalent(300, yf), yf) == pytest.approx(300)
 
 
 def test_meat_loses_weight_rather_than_gaining_it():

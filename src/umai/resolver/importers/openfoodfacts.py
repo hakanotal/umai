@@ -10,23 +10,12 @@ kJ (`energy-kcal_100g` is usually present too, but not always).
 
 from __future__ import annotations
 
-import logging
 from typing import Any
-
-import httpx
 
 from umai.db.models import FoodSource, FoodState
 from umai.resolver.importers.usda import ImportedFood
 
-log = logging.getLogger(__name__)
-
-BASE = "https://world.openfoodfacts.org/api/v2"
 KJ_PER_KCAL = 4.184
-
-# OFF asks that clients identify themselves, and blocks generic agents.
-USER_AGENT = "umai/0.1 (self-hosted personal nutrition assistant)"
-
-FIELDS = "product_name,product_name_en,brands,nutriments,quantity,serving_size"
 
 
 def _kcal(nutriments: dict[str, Any]) -> float | None:
@@ -78,24 +67,3 @@ def _opt(v: Any) -> float | None:
 def _mg(grams: Any) -> float | None:
     """OFF publishes sodium in grams; the foods table stores milligrams."""
     return float(grams) * 1000.0 if grams is not None else None
-
-
-async def by_barcode(
-    barcode: str, *, client: httpx.AsyncClient | None = None
-) -> ImportedFood | None:
-    owns_client = client is None
-    client = client or httpx.AsyncClient(timeout=20, headers={"User-Agent": USER_AGENT})
-    try:
-        resp = await client.get(f"{BASE}/product/{barcode}.json", params={"fields": FIELDS})
-        resp.raise_for_status()
-        payload = resp.json()
-    except httpx.HTTPError as exc:
-        log.warning("open food facts lookup failed for %s: %s", barcode, exc)
-        return None
-    finally:
-        if owns_client:
-            await client.aclose()
-
-    if payload.get("status") != 1:
-        return None
-    return to_imported(payload.get("product") or {}, barcode)

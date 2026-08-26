@@ -1,4 +1,4 @@
-"""Mini App backend. Telegram initData HMAC verification for auth.
+"""Mini App backend.
 
 Phase 1 serves two routes: the Health Auto Export ingest endpoint and, in prod,
 the Telegram webhook that feeds the dispatcher. The Mini App frontend itself is
@@ -13,13 +13,12 @@ that somebody eventually forgets to rotate it.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import hmac
 import logging
-import time
 import uuid
 from collections import deque
-from urllib.parse import unquote_plus
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 # Imported at module scope deliberately. It was a function-local import inside
 # the per-update path, where building aiogram's pydantic validators on first use
@@ -36,8 +35,30 @@ from umai.ingest.health import ingest
 log = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """On shutdown, give the detached update tasks a moment to finish.
+
+    Moving the handler off the request took it out from under uvicorn's
+    graceful shutdown, which waits for in-flight *requests* and knows nothing
+    about a task. Without this, a deploy landing mid-photo drops the photo —
+    the user sent it, the bot acknowledged it, and nothing was ever logged.
+
+    Bounded, because the wait is against a deploy: a photo can legitimately
+    take 90s and Railway will not hold the old container open that long, so the
+    choice is a short drain or none.
+    """
+    yield
+    if not _IN_FLIGHT:
+        return
+    log.info("shutdown: draining %d in-flight update(s)", len(_IN_FLIGHT))
+    _, pending = await asyncio.wait(set(_IN_FLIGHT), timeout=DRAIN_TIMEOUT)
+    if pending:
+        log.warning("shutdown: %d update(s) abandoned mid-flight", len(pending))
+
+
 def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
-    app = FastAPI(title="umai", docs_url=None, redoc_url=None)
+    app = FastAPI(title="umai", docs_url=None, redoc_url=None, lifespan=_lifespan)
     app.state.settings = settings
     app.state.dispatcher = dispatcher
     app.state.bot = bot
@@ -132,6 +153,8 @@ def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
         if not expected or not hmac.compare_digest(x_telegram_bot_api_secret_token, expected):
             raise HTTPException(status_code=401, detail="bad secret")
         update = await request.json()
+        if not isinstance(update, dict):
+            raise HTTPException(status_code=400, detail="not an update")
 
         # Belt and braces behind the fast ack. Telegram also redelivers after a
         # network fault or a restart mid-handler, and an update_id it has
@@ -159,6 +182,9 @@ async def _feed(dispatcher, bot, update: dict) -> None:
     except Exception:
         log.exception("webhook: update %s failed", update.get("update_id"))
 
+
+# How long shutdown waits for detached update tasks before giving up on them.
+DRAIN_TIMEOUT = 20.0
 
 # Strong references to in-flight update tasks. asyncio holds only a weak one,
 # so a task nobody keeps can be collected mid-await and the update silently
@@ -223,31 +249,3 @@ async def _user_for_token(session, token: str) -> uuid.UUID:
             return uuid.UUID(str(user_id))
     log.warning("health ingest rejected: unknown token")
     raise HTTPException(status_code=401, detail="bad token")
-
-
-def verify_init_data(init_data: str, bot_token: str, max_age_s: int = 86400) -> dict:
-    """Telegram Mini App auth: HMAC-SHA256 of initData with the secret key
-    `WebAppData`, plus a freshness check. Phase 4 uses this; it lives here now
-    so the auth scheme is settled before the frontend exists."""
-    # Percent-decoded before the check string is built, per Telegram's scheme.
-    # The `user` field is always URL-encoded JSON, so without this the HMAC
-    # could never match and every real initData would be rejected.
-    pairs = {}
-    for chunk in init_data.split("&"):
-        key, _, value = chunk.partition("=")
-        pairs[unquote_plus(key)] = unquote_plus(value)
-
-    received = pairs.pop("hash", "")
-    if not received:
-        raise HTTPException(status_code=401, detail="no hash")
-
-    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
-    secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-    calculated = hmac.new(secret, data_check_string.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(received, calculated):
-        raise HTTPException(status_code=401, detail="bad hash")
-
-    auth_date = int(pairs.get("auth_date", "0"))
-    if time.time() - auth_date > max_age_s:
-        raise HTTPException(status_code=401, detail="initData expired")
-    return pairs

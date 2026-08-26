@@ -591,26 +591,6 @@ class HealthMetric(Base):
     ingested_at: Mapped[dt.datetime] = mapped_column(TS, server_default=func.now())
 
 
-class DailyRollup(Base):
-    __tablename__ = "daily_rollups"
-    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_rollup_user_date"),)
-
-    id: Mapped[uuid.UUID] = _uuid_pk()
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    date: Mapped[dt.date] = mapped_column(Date)
-    kcal_reported: Mapped[float] = mapped_column(Float, default=0.0)
-    kcal_calibrated: Mapped[float | None] = mapped_column(Float)
-    protein_g: Mapped[float] = mapped_column(Float, default=0.0)
-    carbs_g: Mapped[float] = mapped_column(Float, default=0.0)
-    fat_g: Mapped[float] = mapped_column(Float, default=0.0)
-    water_ml: Mapped[float] = mapped_column(Float, default=0.0)
-    steps: Mapped[int | None] = mapped_column(Integer)
-    sleep_minutes: Mapped[int | None] = mapped_column(Integer)
-    entry_count: Mapped[int] = mapped_column(Integer, default=0)
-    # what gates the calibration fit. 0..1.
-    coverage_score: Mapped[float] = mapped_column(Float, default=0.0)
-
-
 class TrendWeight(Base):
     __tablename__ = "trend_weight"
     __table_args__ = (UniqueConstraint("user_id", "date", name="uq_trend_user_date"),)

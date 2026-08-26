@@ -95,37 +95,3 @@ def trend_on(points: list[TrendPoint], day: dt.date) -> float | None:
             break
         value = p.ewma_kg
     return value
-
-
-def rate_kg_per_week(points: list[TrendPoint], window_days: int = 14) -> float | None:
-    """Rate of change of the trend, in kg per week.
-
-    Measured across the window rather than fitted: with an already-smoothed
-    series a regression adds precision the underlying data does not have.
-    """
-    if len(points) < 2:
-        return None
-
-    end = points[-1]
-    cutoff = end.date - dt.timedelta(days=window_days)
-    earlier = [p for p in points if p.date <= cutoff]
-    start = earlier[-1] if earlier else points[0]
-
-    span_days = (end.date - start.date).days
-    if span_days <= 0:
-        return None
-
-    return (end.ewma_kg - start.ewma_kg) / span_days * 7.0
-
-
-def energy_balance_kcal(points: list[TrendPoint], start: dt.date, end: dt.date) -> float | None:
-    """Total energy balance implied by the change in trend weight over a window.
-
-    This is the body's own report of what happened, and the left-hand side of
-    the identity the calibration engine solves. Negative means a deficit.
-    """
-    a = trend_on(points, start)
-    b = trend_on(points, end)
-    if a is None or b is None:
-        return None
-    return (b - a) * KCAL_PER_KG

@@ -39,8 +39,6 @@ CALENDAR = "📅"
 PENCIL = "✏️"
 BASKET = "🗑"
 CHECK = "✅"
-HOURGLASS = "⏳"
-BOOK = "📚"
 GEAR = "⚙️"
 
 WATER_250 = f"{WATER} 250 ml"

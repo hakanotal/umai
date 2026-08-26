@@ -46,22 +46,10 @@ LINE = "#DDD8C2"
 # rather than raising.
 FONT_STACK = ["Inter", "Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
 
-# The digest chart's three series. These are *semantic* rather than brand
-# colours: a reader should not have to consult a legend to know which bar is
-# water. Colour carries the meaning and the legend confirms it, which is what
-# lets the chart stay readable at Telegram's thumbnail size.
-#
-#   kcal   terracotta   food and heat
-#   water  slate blue   the one unarguable convention in the set
-#   steps  moss green   movement, and the palette's own green
-#
-# Desaturated towards the brand's earth tones rather than taken at full
-# strength: three saturated primaries on a cream page read as a spreadsheet.
-# They are matched for value, so no series looks louder than the others at a
-# glance. The goal line is drawn in INK rather than GOLD: gold sits close
-# enough to the terracotta in hue that the dashed rule went soft exactly where
-# it matters most, crossing a calorie bar. A near-black rule reads as
-# structure rather than as a fourth series, and holds against all three.
+# Semantic colours for the digest chart's three series. Desaturated towards
+# earth tones so no series looks louder than the others on the cream page.
+# kcal=terracotta, water=slate blue, steps=moss green. The goal line uses INK
+# rather than GOLD: gold sits too close to terracotta and went soft at the bar.
 SERIES_KCAL = "#C05B3A"
 SERIES_WATER = "#35708F"
 SERIES_STEPS = "#6E8C4A"

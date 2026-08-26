@@ -94,15 +94,6 @@ class Macros:
             fiber_g=self.fiber_g * factor,
         )
 
-    def rounded(self, dp: int = 1) -> Macros:
-        return Macros(
-            kcal=round(self.kcal, dp),
-            protein_g=round(self.protein_g, dp),
-            carbs_g=round(self.carbs_g, dp),
-            fat_g=round(self.fat_g, dp),
-            fiber_g=round(self.fiber_g, dp),
-        )
-
 
 ZERO = Macros()
 
@@ -145,19 +136,6 @@ def raw_equivalent(cooked_grams: float, yield_factor: float | None) -> float:
     if not yield_factor or yield_factor <= 0:
         return cooked_grams
     return cooked_grams / yield_factor
-
-
-def cooked_equivalent(raw_grams: float, yield_factor: float | None) -> float:
-    """The inverse: what a raw weight becomes after cooking.
-
-    Used by the recipe engine, where ingredients are weighed raw and the
-    finished dish is weighed once.
-    """
-    if raw_grams < 0:
-        raise ValueError("weight cannot be negative")
-    if not yield_factor or yield_factor <= 0:
-        return raw_grams
-    return raw_grams * yield_factor
 
 
 def absorbed_oil_grams(food_grams: float, fat_absorption_pct: float | None) -> float:

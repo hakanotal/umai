@@ -372,17 +372,6 @@ def reported_intake_target(fit_result: CalibrationFit, daily_delta_kcal: float) 
     return (fit_result.tdee_estimate + daily_delta_kcal) / fit_result.k_factor
 
 
-def predicted_weekly_change_kg(fit_result: CalibrationFit, reported_kcal_per_day: float) -> float:
-    """What the trend should do if you log this much per day.
-
-    The inverse of the above, and the thing to check a fit against: a fit that
-    predicts the next fortnight correctly is useful regardless of whether its
-    individual parameters are right.
-    """
-    daily_balance = fit_result.k_factor * reported_kcal_per_day - fit_result.tdee_estimate
-    return daily_balance * 7.0 / KCAL_PER_KG
-
-
 def damped_update(current: float, fitted: float, rate: float = LEARNING_RATE) -> float:
     """Move part of the way to the new fit.
 
@@ -412,53 +401,4 @@ def apply_update(
         n_windows=new.n_windows,
         applied=True,
         reason=new.reason,
-    )
-
-
-# ---------------------------------------------------------------------------
-
-
-def explain_plateau(
-    *,
-    fit_now: CalibrationFit,
-    fit_before: CalibrationFit | None,
-    trend_rate_kg_per_week: float | None,
-) -> str:
-    """Which of the three real causes is this.
-
-    The plan is specific that when progress stalls the system must distinguish
-    between them and say which it thinks is happening, and that it must check
-    its own bias term before blaming the user.
-    """
-    if trend_rate_kg_per_week is not None and trend_rate_kg_per_week < -0.05:
-        return (
-            "The trend has not actually stalled. It is still moving down at "
-            f"{abs(trend_rate_kg_per_week):.2f} kg/week; a flat scale reading for a few "
-            "days is usually water."
-        )
-
-    if fit_before is not None and fit_before.applied and fit_now.applied:
-        k_moved = fit_now.k_factor - fit_before.k_factor
-        tdee_moved = fit_now.tdee_estimate - fit_before.tdee_estimate
-        if k_moved > 0.05:
-            return (
-                f"My logging factor moved from {fit_before.k_factor:.2f} to "
-                f"{fit_now.k_factor:.2f}, which means the numbers you are logging are "
-                "further below what you are actually eating than they were. That is "
-                "the most likely cause, and it is a measurement problem rather than "
-                "a discipline one."
-            )
-        if tdee_moved < -75:
-            return (
-                f"My estimate of your expenditure has fallen from {fit_before.tdee_estimate:.0f} "
-                f"to {fit_now.tdee_estimate:.0f} kcal/day. That is either less movement than "
-                "before or adaptation to the deficit."
-            )
-
-    if not fit_now.applied:
-        return f"I cannot tell yet: {fit_now.reason}."
-
-    return (
-        "Intake and expenditure both look stable, so the deficit itself is likely "
-        "smaller than intended rather than something having changed."
     )

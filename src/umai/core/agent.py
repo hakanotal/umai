@@ -15,7 +15,6 @@ code so there is exactly zero risk of an invented number.
 from __future__ import annotations
 
 import datetime as dt
-import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -40,8 +39,6 @@ from umai.db.models import (
 )
 from umai.perception.client import PerceptionOutcome, parse_json_object
 from umai.resolver.match import Resolver
-
-log = logging.getLogger(__name__)
 
 INTENT_SYSTEM = """You route messages for a personal nutrition assistant. Reply with a \
 single JSON object and nothing else.

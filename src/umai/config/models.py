@@ -21,11 +21,6 @@ from typing import Any
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
-# ---------------------------------------------------------------------------
-# Tier definitions
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ModelSpec:
     id: str
@@ -113,21 +108,8 @@ TASKS: dict[str, ModelSpec] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Per-task request parameters
-# ---------------------------------------------------------------------------
-
-# Perception runs at temperature 0 with a fixed seed. Run-to-run variance is
-# the one error the calibration engine cannot absorb, so any determinism the
-# provider offers is worth taking.
-#
-# All three tiers are reasoning models on OpenRouter: they consume completion
-# tokens on internal chain-of-thought before producing visible output. max_tokens
-# limits the *total* completion (reasoning + output), so without headroom the
-# model exhausts its budget thinking and returns an empty string. The values
-# below leave room for both. reasoning effort is set to "low" everywhere: the
-# tasks are perception and judgement, not theorem-proving, and lower effort
-# means fewer reasoning tokens, lower cost, and faster responses.
+# Perception at temperature 0 with a fixed seed for run-to-run determinism.
+# max_tokens includes reasoning headroom; all three tiers are reasoning models.
 PARAMS: dict[str, dict[str, Any]] = {
     "perception": {"temperature": 0.0, "seed": 42, "max_tokens": 4000},
     "label_ocr": {"temperature": 0.0, "seed": 42, "max_tokens": 3000},
@@ -158,11 +140,6 @@ REASONING: dict[str, dict[str, Any]] = {
     # together, or the validator throws the row away.
     "enrichment": {"effort": "medium"},
 }
-
-
-# ---------------------------------------------------------------------------
-# Client
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -424,10 +401,6 @@ class ModelClient:
             asyncio.run_coroutine_threadsafe(self._on_usage(**kw), loop)
 
 
-# ---------------------------------------------------------------------------
-# Live pricing, refreshed on start so the cost report never goes stale
-# ---------------------------------------------------------------------------
-
 PRICES: dict[str, dict] = {}
 
 
@@ -484,8 +457,6 @@ def preflight() -> list[str]:
                 )
     return problems
 
-
-# ---------------------------------------------------------------------------
 
 MONTHLY_ESTIMATE = """
 Assumes 3 photos/day, 30 utility calls/day, 5 coach calls/day.

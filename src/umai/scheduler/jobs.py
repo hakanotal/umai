@@ -54,24 +54,10 @@ log = logging.getLogger(__name__)
 # deployment costs one indexed query per tick.
 TICK_MINUTES = 5
 
-# Mirrors the column defaults on `users`. The row is the source of truth; these
-# exist so a caller constructing a user in a test does not have to guess.
-DEFAULT_SUMMARY_HOUR = 0
-DEFAULT_SUMMARY_MINUTE = 10
-
-# A summary time in the small hours reports the day that has just ended, not
-# the one a few minutes old. Below this local time the digest is read as
-# belonging to the previous day, which is what makes a post-midnight digest
-# expressible at all: the alternative is a 23:59 due time, whose sixty-second
-# window four ticks in five would miss outright.
+# Below this local time the digest belongs to the previous day.
 SMALL_HOURS = dt.time(4, 0)
 
-# How long after the due instant a digest may still be sent, and the reason a
-# due time is a lower bound rather than an appointment. The tick runs every
-# five minutes on an unaligned interval and the process can be restarting, so
-# the digest belongs to a *day* rather than to an instant and a late tick sends
-# the day it owes. Bounded at three hours, because a digest that turns up at
-# breakfast is worse than no digest.
+# A late tick still sends the day it owes; bounded at three hours.
 SUMMARY_GRACE = dt.timedelta(hours=3)
 
 # How often the enrichment sweep looks for gaps. Frequent enough that a meal
