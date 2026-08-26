@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
+from umai.core import onboarding as ob
 from umai.core.tools import TodayEntry
 from umai.db.models import EntryKind
 from umai.telegram import keyboards
@@ -84,6 +85,17 @@ def test_today_entry_prefix_is_8_chars_and_button_uses_it():
     markup = keyboards.edit_list([entry])
     data = _all_callback_data(markup)[0]
     assert data == f"edit:{entry.prefix}"
+
+
+def test_onboarding_keyboards_callback_data_fits_telegrams_64_bytes():
+    for markup in (
+        keyboards.onboarding_sex(),
+        keyboards.onboarding_goal(ob.GOAL_CHOICES),
+        keyboards.onboarding_tz_regions(),
+        keyboards.onboarding_confirm_tz("Europe/Istanbul"),
+    ):
+        for data in _all_callback_data(markup):
+            assert len(data.encode()) <= 64, data
 
 
 def test_emoji_vocabulary_is_consistent():

@@ -63,6 +63,8 @@ DONE = (
 
 
 def _keyboard(step: ob.Step, user: User) -> InlineKeyboardMarkup | None:
+    if step.kind == "tz":
+        return keyboards.onboarding_tz_regions()
     if step.kind == "sex":
         return keyboards.onboarding_sex()
     if step.kind == "goal":
@@ -207,6 +209,23 @@ async def pick_timezone(callback: CallbackQuery, clock: Clock) -> None:
     await callback.answer()
     if isinstance(callback.message, Message):
         await _confirm_timezone(callback.message, zone, clock)
+
+
+@router.callback_query(F.data.startswith("ob:tzregion:"))
+async def pick_timezone_region(callback: CallbackQuery, clock: Clock) -> None:
+    zone = cb_data(callback).split(":", 2)[2]
+    await callback.answer()
+    if isinstance(callback.message, Message):
+        await _confirm_timezone(callback.message, zone, clock)
+
+
+@router.callback_query(F.data == "ob:tzother")
+async def ask_free_text_tz(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if isinstance(callback.message, Message):
+        await callback.message.answer(
+            "Type your city name or the full zone name (like Europe/Istanbul)."
+        )
 
 
 @router.callback_query(F.data == "ob:tzno")

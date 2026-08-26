@@ -232,6 +232,33 @@ def onboarding_timezones(zones: Sequence[str]) -> InlineKeyboardMarkup:
     )
 
 
+def onboarding_tz_regions() -> InlineKeyboardMarkup:
+    """Common timezone regions as one-tap buttons, plus a free-text fallback."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Istanbul", callback_data="ob:tzregion:Europe/Istanbul"),
+                InlineKeyboardButton(text="London", callback_data="ob:tzregion:Europe/London"),
+                InlineKeyboardButton(text="Berlin", callback_data="ob:tzregion:Europe/Berlin"),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Los Angeles",
+                    callback_data="ob:tzregion:America/Los_Angeles",
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="Tokyo", callback_data="ob:tzregion:Asia/Tokyo"),
+                InlineKeyboardButton(text="Dubai", callback_data="ob:tzregion:Asia/Dubai"),
+                InlineKeyboardButton(text="Sydney", callback_data="ob:tzregion:Australia/Sydney"),
+            ],
+            [
+                InlineKeyboardButton(text="Other city", callback_data="ob:tzother"),
+            ],
+        ]
+    )
+
+
 def onboarding_confirm_tz(zone: str) -> InlineKeyboardMarkup:
     """Yes/no on the local time echoed back.
 
