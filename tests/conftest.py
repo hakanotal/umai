@@ -164,12 +164,18 @@ def _database_url() -> str | None:
 
 
 @pytest.fixture(scope="session")
-def db_url() -> str:
+def db_url(request: pytest.FixtureRequest) -> str:
     """The database URL, starting a testcontainer if none is configured.
 
     Session-scoped and synchronous: a Docker container is not bound to an event
     loop, only an asyncpg connection is. The URL it produces is just a string
     that function-scoped engines connect to.
+
+    The container is stopped at session teardown via a finalizer, rather than
+    being left for the Docker daemon to garbage-collect.  testcontainers does
+    not offer a session-teardown hook compatible with pytest-asyncio's loop
+    management, but ``container.stop()`` is a synchronous Docker SDK call that
+    is safe to run from a finalizer.
     """
     url = _database_url()
     if url is not None:
@@ -184,9 +190,7 @@ def db_url() -> str:
         container.start()
     except Exception as exc:  # docker unavailable
         pytest.skip(f"no Postgres available for integration tests: {exc}")
-    # Stopped at process exit; testcontainers does not offer a session-teardown
-    # hook that is compatible with pytest-asyncio's loop management, and a
-    # leaked container is a disk-space annoyance rather than a correctness bug.
+    request.addfinalizer(container.stop)
     return container.get_connection_url()
 
 
