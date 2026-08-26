@@ -12,13 +12,21 @@ that somebody eventually forgets to rotate it.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import logging
 import time
 import uuid
+from collections import deque
 from urllib.parse import unquote_plus
 
+# Imported at module scope deliberately. It was a function-local import inside
+# the per-update path, where building aiogram's pydantic validators on first use
+# blocked the event loop for well over a second — measurably, a 0.6s sleep took
+# 1.97s — which in production is every webhook after a restart stalling the one
+# loop the bot, the scheduler and uvicorn all share.
+from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -33,6 +41,9 @@ def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
     app.state.settings = settings
     app.state.dispatcher = dispatcher
     app.state.bot = bot
+    # Per app instance, not module-level: the tests build several apps, and a
+    # shared registry would have one test's update ids suppress another's.
+    app.state.seen_updates = SeenUpdates()
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
@@ -95,18 +106,97 @@ def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
         request: Request,
         x_telegram_bot_api_secret_token: str = Header(default=""),
     ) -> dict:
+        """Acknowledge first, work afterwards.
+
+        This awaited `feed_update` inline once, which held the HTTP response
+        open for however long the handler took. A photo takes 17-90s in the
+        vision model, Telegram's webhook timeout is far shorter, so it hung up
+        — the edge logged 499 at ~20s and ~60s — and then **redelivered the
+        same update**. Every redelivery ran the whole pipeline again: on
+        2026-08-26 one bowl of cacik became three live `log_entries` of 107,
+        119 and 107 kcal, disagreeing with each other because perception ran
+        three separate times, and all three counted toward the day.
+
+        Media was never duplicated, because `_record_media` upserts on
+        (user_id, sha256) — which is exactly why the bug looked contained when
+        only the enrichment log was read.
+
+        So the response is sent immediately and the dispatcher runs in a task.
+        Nothing downstream wanted the return value: aiogram's
+        answer-via-webhook shortcut is unused, every handler calls the Bot API
+        directly.
+        """
         if dispatcher is None or bot is None:
             raise HTTPException(status_code=404)
         expected = settings.telegram_webhook_secret
         if not expected or not hmac.compare_digest(x_telegram_bot_api_secret_token, expected):
             raise HTTPException(status_code=401, detail="bad secret")
         update = await request.json()
-        from aiogram.types import Update
 
-        await dispatcher.feed_update(bot=bot, update=Update(**update))
+        # Belt and braces behind the fast ack. Telegram also redelivers after a
+        # network fault or a restart mid-handler, and an update_id it has
+        # already been thanked for is never new work.
+        update_id = update.get("update_id")
+        if isinstance(update_id, int) and not app.state.seen_updates.add(update_id):
+            log.info("webhook: ignoring redelivered update %s", update_id)
+            return {"ok": True}
+
+        _spawn(_feed(dispatcher, bot, update))
         return {"ok": True}
 
     return app
+
+
+async def _feed(dispatcher, bot, update: dict) -> None:
+    """Run one update to completion, off the request.
+
+    Nothing awaits this, so an exception escaping it would otherwise surface
+    only as asyncio's "task exception was never retrieved" at garbage-collection
+    time, detached from the update that caused it.
+    """
+    try:
+        await dispatcher.feed_update(bot=bot, update=Update(**update))
+    except Exception:
+        log.exception("webhook: update %s failed", update.get("update_id"))
+
+
+# Strong references to in-flight update tasks. asyncio holds only a weak one,
+# so a task nobody keeps can be collected mid-await and the update silently
+# vanishes.
+_IN_FLIGHT: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _IN_FLIGHT.add(task)
+    task.add_done_callback(_IN_FLIGHT.discard)
+    return task
+
+
+class SeenUpdates:
+    """The update ids already accepted, most recent `maxlen` of them.
+
+    Bounded and in-process, which is the right shape for both constraints: the
+    service runs exactly one replica — Telegram permits one webhook consumer
+    per token — so there is no second process to share this with, and an
+    unbounded set on a long-lived process is a slow leak. A restart forgets
+    everything, which is acceptable because this is the second line of defence:
+    the fast acknowledgement is what stops the redeliveries happening at all.
+    """
+
+    def __init__(self, maxlen: int = 2048) -> None:
+        self._ids: set[int] = set()
+        self._order: deque[int] = deque(maxlen=maxlen)
+
+    def add(self, update_id: int) -> bool:
+        """True if this id is new. False means it has been seen already."""
+        if update_id in self._ids:
+            return False
+        if len(self._order) == self._order.maxlen and self._order:
+            self._ids.discard(self._order[0])
+        self._order.append(update_id)
+        self._ids.add(update_id)
+        return True
 
 
 async def _user_for_token(session, token: str) -> uuid.UUID:
