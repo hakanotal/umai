@@ -192,3 +192,103 @@ async def test_a_library_entry_belongs_to_one_user(session, user, other_user):
 
     assert await tools.user_library(session, user.id, limit=5) != []
     assert await tools.user_library(session, other_user.id, limit=5) == []
+
+
+async def test_recipe_list_is_scoped_to_owner(session, user, other_user):
+    """`user_recipes` is what the My Recipes list reads. Recipes are per-user,
+    so the list must carry the predicate — unscoped it would surface a
+    stranger's saved dishes."""
+    from umai.db.models import Recipe
+
+    recipe = Recipe(
+        user_id=user.id,
+        name="lentil soup",
+        raw_input_grams=500.0,
+        cooked_output_grams=400.0,
+        kcal_per_100g=120.0,
+        protein_g_per_100g=6.0,
+        carbs_g_per_100g=18.0,
+        fat_g_per_100g=1.0,
+    )
+    session.add(recipe)
+    await session.flush()
+
+    mine = await tools.user_recipes(session, user.id, limit=5)
+    theirs = await tools.user_recipes(session, other_user.id, limit=5)
+    assert len(mine) == 1
+    assert mine[0].recipe_id == recipe.id
+    assert theirs == []
+
+
+async def test_user_library_shows_the_most_recent_portion(session, user):
+    """The button shows the grams of the last log, not the 100g placeholder the
+    median-with-default used to put on everything logged fewer than three
+    times."""
+    meal = await _a_meal(session, user, grams=150.0)
+    await tools.remember(session, user.id, meal)
+
+    items = await tools.user_library(session, user.id, limit=5)
+    assert items and items[0].portion_grams == 150.0
+
+
+async def test_user_recipes_portion_falls_back_to_servings_grams(session, user):
+    """A saved recipe never logged shows its defined serving, then 100g."""
+    from umai.db.models import Recipe
+
+    with_serving = Recipe(
+        user_id=user.id,
+        name="with serving",
+        kcal_per_100g=120.0,
+        servings_grams=250.0,
+    )
+    without = Recipe(
+        user_id=user.id,
+        name="no serving",
+        kcal_per_100g=120.0,
+    )
+    session.add_all([with_serving, without])
+    await session.flush()
+
+    by_name = {r.name: r.portion_grams for r in await tools.user_recipes(session, user.id, limit=5)}
+    assert by_name["with serving"] == 250.0
+    assert by_name["no serving"] == 100.0
+
+
+async def test_user_recipes_show_most_recent_logged_portion(session, user):
+    """A recipe logged at least once shows the grams of its last food_item,
+    overriding the defined serving size."""
+    from umai.db.models import Recipe
+
+    recipe = Recipe(
+        user_id=user.id,
+        name="logged soup",
+        kcal_per_100g=120.0,
+        servings_grams=250.0,
+    )
+    session.add(recipe)
+    await session.flush()
+    await tools.log_food_items(
+        session,
+        user.id,
+        [
+            tools.ItemToLog(
+                detected_name="logged soup",
+                detected_state=FoodState("unknown"),
+                grams=300.0,
+                grams_source=GramsSource.user,
+                resolution=Resolution(
+                    food_id=None,
+                    recipe_id=recipe.id,
+                    display_name="logged soup",
+                    method=ResolutionMethod.recipe,
+                    confidence=1.0,
+                ),
+            )
+        ],
+        occurred_at=CLOCK.now(),
+        source=EntrySource.button,
+    )
+
+    mine = await tools.user_recipes(session, user.id, limit=5)
+    matched = [r for r in mine if r.recipe_id == recipe.id]
+    assert matched and matched[0].portion_grams == 300.0

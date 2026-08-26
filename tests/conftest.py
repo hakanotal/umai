@@ -278,6 +278,13 @@ def make_user(**overrides) -> User:
         "goal_type": "lose",
         "goal_rate_kg_per_week": -0.5,
         "cuisines": ["turkish"],
+        # Pinned, not left to the column default: the scheduler tests assert
+        # the 00:10 digest boundary, and `create_all` does not refresh a column
+        # default after a migration changes it, so umai_test once held the
+        # 21:30 default the multi-user migration introduced. Setting it here
+        # keeps the boundary tests honest about what they assume.
+        "summary_hour": 0,
+        "summary_minute": 10,
     }
     return User(**{**fields, **overrides})
 
