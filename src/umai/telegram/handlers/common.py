@@ -28,11 +28,17 @@ log = logging.getLogger(__name__)
 
 class Awaiting(StatesGroup):
     """The chat is waiting for one number: grams, a weigh-in, new ml, a
-    recipe name, or a recipe ingredient."""
+    recipe name, or a recipe ingredient.
+
+    `recipe_number` is the recipe gram-fix and cooked-weight prompt — kept
+    separate from `number` so the meal-confirmation handler in `confirm.py`
+    never branches on recipe draft data, and the recipe write path stays in
+    `recipes.py`."""
 
     number = State()
     recipe_name = State()
     recipe_ingredients = State()
+    recipe_number = State()
 
 
 def cb_data(callback: CallbackQuery) -> str:

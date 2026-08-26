@@ -93,7 +93,8 @@ async def menu_button(
         return
     if label == keyboards.BTN_RECIPE:
         await state.set_state(Awaiting.recipe_name)
-        await message.answer("What's the recipe name?")
+        await state.update_data(recipe_meal_ingredients=None)
+        await message.answer("What should I call this recipe?")
         return
     # BTN_WEIGH
     await state.set_state(Awaiting.number)
@@ -115,7 +116,8 @@ async def configure_recipe(callback: CallbackQuery, state: FSMContext) -> None:
     """Start the recipe flow from the configure menu."""
     await callback.answer()
     await state.set_state(Awaiting.recipe_name)
-    await callback.message.answer("What's the recipe name?")  # type: ignore[union-attr]
+    await state.update_data(recipe_meal_ingredients=None)
+    await callback.message.answer("What should I call this recipe?")  # type: ignore[union-attr]
 
 
 @router.callback_query(F.data == "cfg:dinnerware")

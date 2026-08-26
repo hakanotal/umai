@@ -217,6 +217,9 @@ async def test_recipe_list_is_scoped_to_owner(session, user, other_user):
     theirs = await tools.user_recipes(session, other_user.id, limit=5)
     assert len(mine) == 1
     assert mine[0].recipe_id == recipe.id
+    # Per-serving kcal: portion falls back to 100g (no log, no serving), so
+    # kcal is 100 * 120 / 100. The list shows this instead of the grams.
+    assert mine[0].kcal == 120.0
     assert theirs == []
 
 
@@ -252,6 +255,10 @@ async def test_user_recipes_portion_falls_back_to_servings_grams(session, user):
     by_name = {r.name: r.portion_grams for r in await tools.user_recipes(session, user.id, limit=5)}
     assert by_name["with serving"] == 250.0
     assert by_name["no serving"] == 100.0
+    # Per-serving kcal tracks the portion: 250*120/100 = 300, 100*120/100 = 120.
+    by_kcal = {r.name: r.kcal for r in await tools.user_recipes(session, user.id, limit=5)}
+    assert by_kcal["with serving"] == 300.0
+    assert by_kcal["no serving"] == 120.0
 
 
 async def test_user_recipes_show_most_recent_logged_portion(session, user):
@@ -292,3 +299,5 @@ async def test_user_recipes_show_most_recent_logged_portion(session, user):
     mine = await tools.user_recipes(session, user.id, limit=5)
     matched = [r for r in mine if r.recipe_id == recipe.id]
     assert matched and matched[0].portion_grams == 300.0
+    # 300g portion of a 120 kcal/100g recipe = 360 kcal per serving.
+    assert matched and matched[0].kcal == 360.0
