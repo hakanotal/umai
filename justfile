@@ -192,8 +192,10 @@ sim days="90" tdee="2400" bias="0.78":
 
 # --- deploy ----------------------------------------------------------------
 #
-# Production is Railway, project UMAI, one service. The normal way to ship is
-# to push to main: the service is connected to the GitHub repo and builds the
+# Production is Railway, project UMAI: service `umai-bot` plus a `pgvector`
+# Postgres. Those names are exact — the CLI answers a typo with a flat
+# "Service 'x' not found", which reads like an auth problem. The normal way to
+# ship is to push to main: the service is connected to the GitHub repo and builds the
 # Dockerfile named in railway.json, which also carries the pre-deploy
 # `alembic upgrade head`. The recipes below are for the times you want to
 # bypass that, or to look at what is running.
@@ -205,21 +207,50 @@ smoke:
 # Build and deploy from the working tree, uncommitted changes included. Useful
 # for a hotfix you have not pushed; `git push` is the ordinary path.
 deploy:
-    railway up --service umai
+    railway up --service umai-bot
 
+# Historical, and it returns. Bare `railway logs` streams and never exits,
+# which is why -n is not optional here; `just logs-follow` is the streaming one.
 logs:
-    railway logs --service umai
+    railway logs --service umai-bot -n 200
+
+logs-follow:
+    railway logs --service umai-bot
+
+# The build log — the place a failed deploy explains itself. A build log holding
+# nothing but "scheduling build" is a Dockerfile flag Railway rejected before
+# starting, not a broken builder.
+logs-build:
+    railway logs --service umai-bot -b -n 200
+
+# Edge request log: `just logs-http '>=400'` for just the failures.
+logs-http status="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "{{status}}" ]; then
+        railway logs --service umai-bot --http -n 100 --status "{{status}}"
+    else
+        railway logs --service umai-bot --http -n 100
+    fi
 
 # Railway backs the volume up on a schedule; this is the copy you hold. Needs
-# the Postgres service to have a TCP proxy — `railway variables --service
-# Postgres` shows DATABASE_PUBLIC_URL if it does.
+# the pgvector service to have a TCP proxy — `railway variables --service
+# pgvector` shows DATABASE_PUBLIC_URL if it does.
 backup:
     mkdir -p backups
-    railway run --service Postgres -- \
+    railway run --service pgvector -- \
         sh -c 'pg_dump "$DATABASE_PUBLIC_URL" | gzip' \
         > backups/umai-$(date +%Y%m%d).sql.gz
+
+# One of the sql/ queries against PRODUCTION: `just q-prod sql/row-counts.sql`.
+# Read-only by convention — nothing in sql/ writes, and the schema's
+# immutability rules live in application code, not in triggers, so a hand-edit
+# here bypasses them silently.
+q-prod FILE:
+    @railway run --service pgvector -- \
+        sh -c 'psql "$DATABASE_PUBLIC_URL" -f -' < {{FILE}}
 
 # What is deployed, and what it costs.
 status:
     railway status
-    railway variables --service umai --kv | cut -d= -f1
+    railway variables --service umai-bot --kv | cut -d= -f1

@@ -13,6 +13,7 @@ honour.
 | `docs/umai-project-plan.md` | Product design. §3 calibration, §4 estimation pipeline, §6.3 data model, §7 roadmap. |
 | `docs/technical-implementation.md` | Stack, repo layout, dev loop, testing strategy, the Railway deploy, gotchas. |
 | `docs/progress.md` | One-page done / in-progress / todo, kept current. |
+| `docs/railway-operations.md` | The deploy, service/project ids, reading service and database logs in prod, triage order. |
 | `src/umai/config/models.py` | Model tiers, per-task routing, capability quirks. |
 | `docs/papers/README.md` | The 29-paper evidence base, indexed by the design decision each supports. |
 | `sql/README.md` | Ready-made inspection queries, mounted into pgAdmin at `/sql`. |

@@ -568,6 +568,10 @@ Three platform details the code had to learn, all in `config/settings.py`:
 The variables live on the service and nowhere else. `.env.example` remains the template for
 local development only.
 
+Operating it once it is up — the exact project, environment and service ids, which log stream
+answers which question, and how to run a `sql/` query against the production database — is
+`docs/railway-operations.md`.
+
 Two differences between the environments, and only two:
 
 | | Dev (Mac) | Prod (Railway) |
