@@ -11,6 +11,7 @@ gram fixes, weigh-ins and water edits.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 from aiogram import F, Router
@@ -48,7 +49,13 @@ async def fix_item(callback: CallbackQuery, state: FSMContext) -> None:
         return
     _, entry_prefix, item_no = cb_data(callback).split(":")
     await state.set_state(Awaiting.number)
-    await state.update_data(mode="grams", entry_prefix=entry_prefix, item_no=int(item_no))
+    await state.update_data(
+        mode="grams",
+        entry_prefix=entry_prefix,
+        item_no=int(item_no),
+        orig_chat_id=str(attached.chat.id),
+        orig_message_id=str(attached.message_id),
+    )
     await attached.answer(f"How many grams was item {item_no}?")
     await callback.answer()
 
@@ -56,6 +63,10 @@ async def fix_item(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("ok:"))
 async def meal_ok(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
+    attached = cb_message(callback)
+    if attached is not None:
+        with contextlib.suppress(Exception):
+            await attached.edit_reply_markup()
     await callback.answer("Logged 👍")
 
 
@@ -143,6 +154,14 @@ async def number_received(
         n_items = len(meal.items)
     await state.clear()
     await message.answer(text, reply_markup=keyboards.meal_actions(str(meal.entry.id), n_items))
+    chat_id = data.get("orig_chat_id")
+    msg_id = data.get("orig_message_id")
+    if chat_id and msg_id and message.bot is not None:
+        with contextlib.suppress(Exception):
+            await message.bot.edit_message_reply_markup(
+                chat_id=int(chat_id),
+                message_id=int(msg_id),
+            )
 
 
 async def _fix_item_grams(

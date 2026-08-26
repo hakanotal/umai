@@ -134,7 +134,7 @@ async def edit_field(callback: CallbackQuery, state: FSMContext, principal: Prin
     """
     field = cb_data(callback).split(":", 2)[2]
     step = ob.step_for(field)
-    if step is None:
+    if step is None or step.field in ob.NOT_EDITABLE:
         # A stale keyboard from before a step was renamed or withdrawn.
         await callback.answer("That setting has moved.", show_alert=True)
         return
