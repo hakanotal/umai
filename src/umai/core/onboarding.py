@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from umai.analytics import safety
+from umai.core import cuisines as cuisines_mod
 from umai.core import timezones
 
 # --- what an answer parses into --------------------------------------------
@@ -211,12 +212,19 @@ class Step:
     still owed — that is the whole state machine. `kind` tells the handler
     which keyboard to draw; keeping it a tag rather than a keyboard object is
     what keeps this module free of aiogram.
+
+    `label` is the short noun the profile editor puts on a button ("Height"),
+    where `prompt` is a sentence written for someone who has never seen the
+    bot. The editor re-asks with `prompt` anyway — the wording that explains
+    *why* a birth date is wanted is worth as much on the second answer as on
+    the first — but it cannot put that paragraph on a button.
     """
 
     field: str
     prompt: str
     parse: Callable[[str], ParseResult]
     kind: Literal["text", "sex", "goal", "cuisines"]
+    label: str
 
 
 STEPS: tuple[Step, ...] = (
@@ -229,6 +237,7 @@ STEPS: tuple[Step, ...] = (
         ),
         parse=parse_tz,
         kind="text",
+        label="Timezone",
     ),
     Step(
         field="sex",
@@ -239,18 +248,21 @@ STEPS: tuple[Step, ...] = (
         ),
         parse=parse_sex,
         kind="sex",
+        label="Gender",
     ),
     Step(
         field="height_cm",
         prompt="How tall are you, in centimetres?",
         parse=parse_height,
         kind="text",
+        label="Height",
     ),
     Step(
         field="birth_date",
         prompt="What's your date of birth? YYYY-MM-DD, for example 1990-05-01.",
         parse=parse_birth_date,
         kind="text",
+        label="Date of birth",
     ),
     Step(
         field="onboarding_weight_kg",
@@ -261,12 +273,14 @@ STEPS: tuple[Step, ...] = (
         ),
         parse=parse_weight,
         kind="text",
+        label="Starting weight",
     ),
     Step(
         field="goal_rate_kg_per_week",
         prompt="What are you aiming for?",
         parse=parse_goal,
         kind="goal",
+        label="Goal",
     ),
     Step(
         field="cuisines",
@@ -278,6 +292,7 @@ STEPS: tuple[Step, ...] = (
         ),
         parse=parse_cuisines,
         kind="cuisines",
+        label="Cuisines",
     ),
 )
 
@@ -316,3 +331,72 @@ def progress(state: Any) -> tuple[int, int]:
     if step is None:
         return len(STEPS), len(STEPS)
     return STEPS.index(step) + 1, len(STEPS)
+
+
+# --- editing the answers afterwards -----------------------------------------
+
+# The one wizard step the profile editor does not offer. `onboarding_weight_kg`
+# records what was said during the wizard; the weight *series* is LogEntry rows,
+# and `_finish` turns this column into the first of them. Re-answering it here
+# would edit a historical statement and change nothing the bot reads — the
+# trend, the target and the calibration fit all come from the log. "Weigh in"
+# is the real editor, and it writes where the readers look.
+NOT_EDITABLE = frozenset({WEIGHT_FIELD})
+
+# How many cuisine names fit on a button before the rest becomes "+2".
+_CUISINES_SHOWN = 3
+
+
+def editable_steps() -> tuple[Step, ...]:
+    """The wizard questions a settled user may re-answer, in wizard order.
+
+    Derived from `STEPS` rather than listed again, so a new question is
+    editable the day it is added instead of the day somebody remembers a
+    second list exists.
+    """
+    return tuple(step for step in STEPS if step.field not in NOT_EDITABLE)
+
+
+def step_for(field: str) -> Step | None:
+    """The editable step for a column name, or None.
+
+    Returns None for a field that is not editable as well as for one that does
+    not exist, because the caller — a callback carrying a field name in from
+    Telegram — must treat "no such step" and "not yours to edit" identically.
+    """
+    return next((s for s in editable_steps() if s.field == field), None)
+
+
+def describe(step: Step, value: Any) -> str:
+    """One line of a profile, formatted for display.
+
+    Lives here rather than in the handler because it is the inverse of `parse`
+    and the two have to agree: a height parsed from "1.80" is stored as 180.0
+    and has to read back as "180 cm", not "180.0". Every unset field reads the
+    same way regardless of whether its empty value is None or an empty list.
+    """
+    if not _is_set(value):
+        return "not set"
+    if step.field == "height_cm":
+        return f"{float(value):.0f} cm"
+    if step.field == "sex":
+        return str(value).capitalize()
+    if step.field == "birth_date":
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+    if step.field == "goal_rate_kg_per_week":
+        rate = float(value)
+        for label_, choice, _kind in GOAL_CHOICES:
+            if abs(choice - rate) < 1e-9:
+                return label_
+        # A rate no button offers: a value written before the choices changed.
+        # Shown rather than hidden, because the target is computed from it.
+        return f"{rate:+.2f} kg/wk"
+    if step.field == "cuisines":
+        # Capped, because this goes on a button and `cuisines_mod.label`
+        # carries a flag emoji: six of them is past the width Telegram will
+        # render, and a silently ellipsised list is worse than an honest count.
+        names = [cuisines_mod.label(slug) for slug in value]
+        shown = ", ".join(names[:_CUISINES_SHOWN])
+        extra = len(names) - _CUISINES_SHOWN
+        return f"{shown} +{extra}" if extra > 0 else shown
+    return str(value)

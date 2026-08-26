@@ -11,10 +11,10 @@ position.
 and the onboarding wizard. `APP_ROUTERS` are the application, and they sit
 behind `app_router`, whose root filter is `IsActive()`. aiogram checks a
 router's own filters and returns UNHANDLED *before* offering the update to any
-sub-router, so that one filter gates all eleven feature routers at once.
+sub-router, so that one filter gates all fourteen feature routers at once.
 
 That is the whole reason for the two-tier shape. The alternative — a filter on
-each feature router — is eleven chances to forget, and the one thing an access
+each feature router — is fourteen chances to forget, and the one thing an access
 check may never be is forgettable. `test_router_registration.py` closes the
 last hole by asserting that every module in this package which defines a
 `Router` appears in one of the two tuples: a new feature router wired straight
@@ -33,10 +33,10 @@ so:
   they cannot shadow anything for a user who is already through.
 * `menu` precedes `text` — the reply-keyboard buttons arrive as ordinary text,
   and the invariant is that a button tap never costs a model call.
-* `recipes`, `confirm` and `datarights` precede `text` — each owns an FSM state
-  that consumes a plain message; behind the catch-all, a pending ingredient, a
-  gram answer, or the typed word confirming an account deletion would be
-  classified as a new meal instead.
+* `recipes`, `confirm`, `datarights` and `profile` precede `text` — each owns
+  an FSM state that consumes a plain message; behind the catch-all, a pending
+  ingredient, a gram answer, the typed word confirming an account deletion, or
+  a height being corrected would be classified as a new meal instead.
 * `text` is last, always. It is the catch-all, and anything registered after it
   is unreachable.
 
@@ -61,6 +61,7 @@ from umai.telegram.handlers import (
     menu,
     onboarding,
     photo,
+    profile,
     recipes,
     text,
     token,
@@ -86,6 +87,7 @@ APP_ROUTERS: tuple[Router, ...] = (
     edit.router,
     confirm.router,
     datarights.router,
+    profile.router,
     token.router,
     photo.router,
     text.router,

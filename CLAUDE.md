@@ -25,7 +25,7 @@ the ignore rule is unanchored so moving the directory cannot make them committab
 
 ## Current state (2026-08-23)
 
-Built, lint/mypy clean, 364 tests green (unit + Postgres integration): clock, settings, full
+Built, lint/mypy clean, 459 tests green (unit + Postgres integration): clock, settings, full
 schema + six migrations, stage-1 perception (schema/prompt/images/client), stage-2 resolver,
 stage-3 compute, four food importers, trend/EWMA, safety rails, calibration, correlations,
 health ingest, `tools/simulate.py`, **and the bot stack**: `core/tools.py` (write/read paths),
@@ -242,7 +242,7 @@ yield decision is made there, once, where both states are known.
 `Principal` — deliberately not holding the session across the handler, which would park a
 connection for the 17–23 seconds a photo spends in a vision model. The application sits behind
 a single `IsActive()` filter on the parent router in `handlers/__init__.py`; aiogram checks a
-router's own filters before offering an update to any sub-router, so one line gates all twelve
+router's own filters before offering an update to any sub-router, so one line gates all fourteen
 feature routers. A filter per router would be twelve chances to forget, which is the one thing
 an access check may never be. `tests/unit/test_router_registration.py` closes the last hole by
 enumerating the package and insisting every `Router` appears in `GATE_ROUTERS` or `APP_ROUTERS`
@@ -268,7 +268,10 @@ Shared helpers live in `handlers/common.py`; a helper with one caller stays in t
 module.
 
 **The person is a row, not an environment variable.** Timezone, sex, height, birth date, goal
-rate, starting weight and cuisines are columns on `users`, filled in by the onboarding wizard.
+rate, starting weight and cuisines are columns on `users`, filled in by the onboarding wizard
+and re-editable afterwards from Configure → *Your details* (`telegram/handlers/profile.py`),
+which derives its list from `onboarding.STEPS` rather than restating it and writes only a parsed
+`Ok`, so no answer can clear a column.
 They used to be env vars copied onto every row at creation, which made the second person to use
 the bot a clone of the first — their BMR, their safety floors and their local day all belonged
 to somebody else. `TZ` survives as a process default for log timestamps and the headless
