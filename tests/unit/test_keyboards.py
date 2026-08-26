@@ -12,7 +12,7 @@ import datetime as dt
 import uuid
 
 from umai.core import onboarding as ob
-from umai.core.tools import TodayEntry
+from umai.core.tools import LibraryItem, RecipeListItem, TodayEntry
 from umai.db.models import EntryKind
 from umai.telegram import keyboards
 
@@ -108,3 +108,39 @@ def test_emoji_vocabulary_is_consistent():
     assert keyboards.BTN_WEIGH.startswith(keyboards.SCALE)
     assert "Recipes" in keyboards.BTN_LIBRARY
     assert keyboards.BTN_CONFIGURE.startswith(keyboards.GEAR)
+
+
+def test_library_items_puts_recipes_above_foods_with_distinct_prefixes():
+    """Recipes sit above foods and carry a `rec:` prefix so a recipe id is
+    never fed to the food quick-log handler (and vice versa)."""
+    rec_id = uuid.uuid4()
+    food_id = uuid.uuid4()
+    markup = keyboards.library_items(
+        items=[LibraryItem(food_id=food_id, name="rice", portion_grams=150.0, times_logged=5)],
+        recipes=[
+            RecipeListItem(
+                recipe_id=rec_id, name="lentil soup", portion_grams=320.0, times_logged=2
+            )
+        ],
+    )
+    data = _all_callback_data(markup)
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert data == [f"rec:{rec_id}:320", f"lib:{food_id}:150"]
+    assert labels[0].startswith("lentil soup")
+    assert labels[1].startswith("rice")
+
+
+def test_library_items_callback_data_fits_telegrams_64_bytes():
+    markup = keyboards.library_items(
+        items=[LibraryItem(food_id=uuid.uuid4(), name="rice", portion_grams=150.0, times_logged=5)],
+        recipes=[
+            RecipeListItem(
+                recipe_id=uuid.uuid4(),
+                name="lentil soup",
+                portion_grams=320.0,
+                times_logged=2,
+            )
+        ],
+    )
+    for data in _all_callback_data(markup):
+        assert len(data.encode()) <= 64, data

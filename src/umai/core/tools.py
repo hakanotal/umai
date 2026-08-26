@@ -419,35 +419,56 @@ async def portion_priors(
 
 @dataclass(slots=True)
 class LibraryItem:
-    """A food the user has logged before, with its typical serving."""
+    """A food the user has logged before, with its most-recent portion."""
 
     food_id: uuid.UUID
     name: str
-    typical_grams: float
+    portion_grams: float
+    times_logged: int
+
+
+@dataclass(slots=True)
+class RecipeListItem:
+    """A recipe the user has saved, with its most-recent portion."""
+
+    recipe_id: uuid.UUID
+    name: str
+    portion_grams: float
     times_logged: int
 
 
 async def user_library(
     session: AsyncSession, user_id: uuid.UUID, limit: int = 8
 ) -> list[LibraryItem]:
-    """Most frequent library items, with typical grams from portion priors.
+    """Most frequent library items, with the most-recent portion each was logged at.
 
-    Returns up to `limit` items, ordered by times_logged descending. Foods
-    without a portion prior get 100g as default.
+    Ordered by times_logged descending. The portion is the grams of the last
+    non-superseded log of that food — the same number the user last served, not
+    a median and never the 100g placeholder that used to make every line read
+    the same. The median still feeds the photo prompt via `portion_priors`;
+    this is the display surface only.
     """
-    from umai.db.models import FoodLibrary, PortionPrior
+    from umai.db.models import FoodLibrary
 
+    recent_grams = (
+        select(FoodItem.grams)
+        .join(LogEntry, FoodItem.entry_id == LogEntry.id)
+        .where(
+            FoodItem.food_id == FoodLibrary.food_id,
+            LogEntry.user_id == FoodLibrary.user_id,
+            FoodItem.grams > 0,
+            LogEntry.superseded_by.is_(None),
+        )
+        .order_by(LogEntry.occurred_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
     stmt = (
         select(
             FoodLibrary.food_id,
             FoodLibrary.display_name,
             FoodLibrary.times_logged,
-            PortionPrior.median_grams,
-        )
-        .outerjoin(
-            PortionPrior,
-            (PortionPrior.food_id == FoodLibrary.food_id)
-            & (PortionPrior.user_id == FoodLibrary.user_id),
+            recent_grams.label("recent_grams"),
         )
         .where(FoodLibrary.user_id == user_id)
         .order_by(FoodLibrary.times_logged.desc())
@@ -458,11 +479,72 @@ async def user_library(
         LibraryItem(
             food_id=r.food_id,
             name=r.display_name,
-            typical_grams=float(r.median_grams) if r.median_grams else 100.0,
+            portion_grams=float(r.recent_grams) if r.recent_grams else 100.0,
             times_logged=r.times_logged,
         )
         for r in rows
     ]
+
+
+async def user_recipes(
+    session: AsyncSession, user_id: uuid.UUID, limit: int = 5
+) -> list[RecipeListItem]:
+    """The user's saved recipes, most-recently-added first, with the most-recent
+    portion each was logged at.
+
+    A recipe logged at least once shows the grams of its last non-superseded
+    food_item; a recipe never logged falls back to its defined serving size, then
+    to 100g. `times_logged` is carried for display but the column is dead today
+    — nothing increments it — so ordering is by created_at, not usage.
+    """
+    from umai.db.models import Recipe
+
+    recent_grams = (
+        select(FoodItem.grams)
+        .join(LogEntry, FoodItem.entry_id == LogEntry.id)
+        .where(
+            FoodItem.recipe_id == Recipe.id,
+            LogEntry.user_id == user_id,
+            FoodItem.grams > 0,
+            LogEntry.superseded_by.is_(None),
+        )
+        .order_by(LogEntry.occurred_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(
+            Recipe.id,
+            Recipe.name,
+            Recipe.times_logged,
+            Recipe.servings_grams,
+            recent_grams.label("recent_grams"),
+        )
+        .where(
+            Recipe.user_id == user_id,
+            Recipe.kcal_per_100g.is_not(None),
+        )
+        .order_by(Recipe.created_at.desc())
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).all()
+    items: list[RecipeListItem] = []
+    for r in rows:
+        if r.recent_grams is not None:
+            grams = float(r.recent_grams)
+        elif r.servings_grams is not None:
+            grams = float(r.servings_grams)
+        else:
+            grams = 100.0
+        items.append(
+            RecipeListItem(
+                recipe_id=r.id,
+                name=r.name,
+                portion_grams=grams,
+                times_logged=r.times_logged,
+            )
+        )
+    return items
 
 
 async def add_dinnerware(

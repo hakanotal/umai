@@ -150,7 +150,7 @@ The buttons under the message field cover everything:
 📅 Today: today's totals
 📊 Week: the last seven days
 ✏️ Edit: fix or remove something you logged
-🍽️ Recipes: your frequent foods, one-tap re-log
+🍽️ My Recipes: your saved recipes and frequent foods, one-tap re-log
 🥣 Dinnerware: plate sizes for better portion estimates
 ⚖️ Weigh in: log your morning weight
 📝 New Recipe: save a dish you cook often

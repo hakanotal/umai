@@ -30,7 +30,7 @@ from aiogram.types import (
 )
 
 from umai.core.cuisines import CUISINES
-from umai.core.tools import LibraryItem, TodayEntry
+from umai.core.tools import LibraryItem, RecipeListItem, TodayEntry
 
 WATER = "💧"
 SCALE = "⚖️"
@@ -46,8 +46,8 @@ BTN_TODAY = f"{CALENDAR} Today"
 BTN_WEEK = f"{CHART} Week"
 BTN_EDIT = f"{PENCIL} Edit"
 BTN_WEIGH = f"{SCALE} Weigh in"
-BTN_RECIPE = "📝 New"
-BTN_LIBRARY = "🍽️ Recipes"
+BTN_RECIPE = "📝 New Recipe"
+BTN_LIBRARY = "🍽️ My Recipes"
 BTN_CONFIGURE = f"{GEAR} Configure"
 
 ENTRY_PREFIX_LEN = 8
@@ -399,15 +399,33 @@ def dinnerware_list(items: dict[str, str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def library_items(items: list[LibraryItem]) -> InlineKeyboardMarkup:
-    """One-tap re-log for frequent foods. Shows name and typical grams."""
-    rows = [
-        [
-            InlineKeyboardButton(
-                text=f"{item.name} ({item.typical_grams:.0f}g)",
-                callback_data=f"lib:{item.food_id}:{item.typical_grams:.0f}",
-            )
-        ]
-        for item in items
-    ]
+def library_items(
+    items: list[LibraryItem], recipes: list[RecipeListItem] | None = None
+) -> InlineKeyboardMarkup:
+    """One-tap re-log for saved recipes (top) and frequent foods (below).
+
+    Recipes carry a `rec:` callback prefix and foods a `lib:` one, so the two
+    quick-log handlers stay separate and a recipe id is never mistaken for a
+    food id. Each shows the most-recent portion that food or recipe was logged
+    at, never the 100g placeholder that used to make every line read the same.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    for r in recipes or []:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{r.name} ({r.portion_grams:.0f}g)",
+                    callback_data=f"rec:{r.recipe_id}:{r.portion_grams:.0f}",
+                )
+            ]
+        )
+    for item in items:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{item.name} ({item.portion_grams:.0f}g)",
+                    callback_data=f"lib:{item.food_id}:{item.portion_grams:.0f}",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
