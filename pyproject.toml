@@ -30,6 +30,10 @@ dev = [
     "testcontainers[postgres]>=4.9",
     "ruff>=0.9",
     "mypy>=1.14",
+    # drives the ASGI lifespan (startup/shutdown) in test_webhook_dedup, which
+    # guards the in-flight-update drain on deploy. A missing dep surfaced as
+    # the shutdown-drain test erroring rather than running.
+    "asgi-lifespan>=2.1",
 ]
 
 [build-system]
