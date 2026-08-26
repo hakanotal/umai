@@ -35,6 +35,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, text
@@ -55,8 +56,23 @@ TICK_MINUTES = 5
 
 # Mirrors the column defaults on `users`. The row is the source of truth; these
 # exist so a caller constructing a user in a test does not have to guess.
-DEFAULT_SUMMARY_HOUR = 21
-DEFAULT_SUMMARY_MINUTE = 30
+DEFAULT_SUMMARY_HOUR = 0
+DEFAULT_SUMMARY_MINUTE = 10
+
+# A summary time in the small hours reports the day that has just ended, not
+# the one a few minutes old. Below this local time the digest is read as
+# belonging to the previous day, which is what makes a post-midnight digest
+# expressible at all: the alternative is a 23:59 due time, whose sixty-second
+# window four ticks in five would miss outright.
+SMALL_HOURS = dt.time(4, 0)
+
+# How long after the due instant a digest may still be sent, and the reason a
+# due time is a lower bound rather than an appointment. The tick runs every
+# five minutes on an unaligned interval and the process can be restarting, so
+# the digest belongs to a *day* rather than to an instant and a late tick sends
+# the day it owes. Bounded at three hours, because a digest that turns up at
+# breakfast is worse than no digest.
+SUMMARY_GRACE = dt.timedelta(hours=3)
 
 # How often the enrichment sweep looks for gaps. Frequent enough that a meal
 # logged at lunch has its totals filled in long before the evening summary
@@ -109,20 +125,42 @@ async def active_users(session: AsyncSession) -> list[User]:
     return list(rows)
 
 
-def summary_is_due(user: User, clock: Clock) -> bool:
-    """Has this user's local clock reached their summary time today.
+def summary_due_day(user: User, clock: Clock) -> dt.date | None:
+    """Which local day's digest this tick owes, or None if it owes none.
 
     Compared in Python rather than with `AT TIME ZONE`. SQL could express it,
     but then the only way to test the boundary would be to move the database's
     clock; in Python a `FakeClock` puts the whole fleet at any instant, which is
     what the project's time abstraction exists for.
 
-    Only a lower bound is checked, with no upper one: the claim is what stops a
-    second send, so a tick at 23:55 for a 21:30 summary correctly sends the one
-    that a restart caused to be missed.
+    **The day is returned, not a boolean, because the day the digest is about
+    and the day the tick runs on are not the same one.** The default summary
+    time is ten past midnight, chosen so the figures it quotes are final rather
+    than a report on a day with two hours still to run — and at that hour the
+    day being reported is yesterday. A boolean would have left every downstream
+    read (totals, chart window, steps) to work that out again, or more likely
+    not to, and summarise a day ten minutes old.
+
+    So a due time before SMALL_HOURS is due at that time on the *following*
+    morning, and one after it is due the same evening. Both then get the same
+    treatment: the owed day is the most recent one whose due instant has
+    passed, and it is skipped once SUMMARY_GRACE has run out. Lateness inside
+    the grace is not otherwise policed — the claim is what stops a second send,
+    so a tick at 02:00 for a 00:10 summary correctly sends the one a restart
+    caused to be missed.
     """
-    local = clock.now().astimezone(ZoneInfo(user.zone))
-    return local.time() >= dt.time(user.summary_hour, user.summary_minute)
+    zone = ZoneInfo(user.zone)
+    local = clock.now().astimezone(zone)
+    due = dt.time(user.summary_hour, user.summary_minute)
+    # Days between the day being reported and the morning it is delivered.
+    lag = dt.timedelta(days=1) if due < SMALL_HOURS else dt.timedelta()
+
+    day = local.date() - lag
+    if local.time() < due:
+        day -= dt.timedelta(days=1)
+    if local - dt.datetime.combine(day + lag, due, tzinfo=zone) > SUMMARY_GRACE:
+        return None
+    return day
 
 
 async def user_tick(session_factory, settings, clock: Clock, send, send_text=None) -> None:
@@ -174,11 +212,11 @@ async def evening_summary(
     all — the day was already spent. Claiming last still guarantees a single
     send, because the claim precedes `send`.
     """
-    if not summary_is_due(user, clock):
+    day = summary_due_day(user, clock)
+    if day is None:
         return
 
-    day = today(clock, user.zone)
-    totals = await tools.day_totals(session, user, clock)
+    totals = await tools.day_totals(session, user, clock, day)
     if totals.entry_count == 0 and totals.kcal == 0:
         return  # nothing logged: say nothing, rather than nag an empty day
 
@@ -193,30 +231,71 @@ async def evening_summary(
         except RuntimeError:
             target = None
 
-    days, kcal, _protein = await _last_days(session, user, clock, 7)
-    png = charts_mod.week_kcal(days, kcal, target.kcal_target if target else None)
-    steps = await tools.daily_steps(session, user, clock)
     wt = tools.water_target(user, settings)
+    week = await _last_days(session, user, clock, 7, end=day)
+    png = charts_mod.week_overview(
+        week.days,
+        week.kcal,
+        week.water_ml,
+        week.steps,
+        kcal_target=target.kcal_target if target else None,
+        water_target_ml=wt,
+    )
+    steps = await tools.daily_steps(session, user, clock, day)
     caption = tools.format_day(user, totals, target, steps=steps, water_target_ml=wt)
     await send(telegram_id, png, caption)
 
 
+@dataclass(frozen=True, slots=True)
+class WeekSeries:
+    """One week of the three digest metrics, aligned day for day.
+
+    A dataclass rather than a tuple of four lists because the chart's three
+    series must stay in step with `days`, and a positional swap between
+    `water_ml` and `steps` would draw a plausible, wrong picture in silence.
+    """
+
+    days: list[dt.date]
+    kcal: list[float]
+    water_ml: list[float]
+    steps: list[int | None]
+
+
 async def _last_days(
-    session: AsyncSession, user: User, clock: Clock, n: int
-) -> tuple[list[dt.date], list[float], list[float]]:
-    """Per-day totals for the last n local days, zeros included (for the chart
-    a flat zero is honest: nothing was logged)."""
-    end = local_date(clock.now(), user.zone)
+    session: AsyncSession, user: User, clock: Clock, n: int, end: dt.date | None = None
+) -> WeekSeries:
+    """The last n local days of intake, water and steps.
+
+    Calories and water are zero on a day nothing was logged - that is honest,
+    nothing *was* eaten or drunk as far as the record goes. Steps are None on a
+    day the phone delivered nothing, which is a different claim from zero and
+    stays None all the way to the bar the chart declines to draw.
+
+    Steps come from one ranged query rather than n daily ones, so the chart
+    costs a single round trip however long the window is.
+
+    `end` is the last day in the window, defaulting to the user's today. The
+    digest passes the day it is reporting on, which after a late-night summary
+    time is usually yesterday — charting through "today" there would end the
+    week on a day two minutes old.
+    """
+    end = end or local_date(clock.now(), user.zone)
+    start = end - dt.timedelta(days=n - 1)
+    by_day = await tools.steps_by_day(session, user, start, end)
+
     days: list[dt.date] = []
     kcal: list[float] = []
-    protein: list[float] = []
+    water: list[float] = []
+    steps: list[int | None] = []
     for back in range(n - 1, -1, -1):
         day = end - dt.timedelta(days=back)
         totals = await tools.day_totals(session, user, clock, day)
         days.append(day)
         kcal.append(totals.kcal)
-        protein.append(totals.protein_g)
-    return days, kcal, protein
+        water.append(totals.water_ml)
+        reading = by_day.get(day)
+        steps.append(reading.steps if reading is not None else None)
+    return WeekSeries(days=days, kcal=kcal, water_ml=water, steps=steps)
 
 
 async def enrichment_sweep(session_factory, models, clock: Clock) -> None:
