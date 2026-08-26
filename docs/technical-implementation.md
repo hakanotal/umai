@@ -41,9 +41,6 @@ brew install railway                # Deploying, logs, and the production databa
 brew install postgresql@17          # For psql only. The server runs in Docker.
 ```
 
-Tailscale is no longer on this list. It existed to reach the Pi's loopback-bound ingest endpoint
-from a phone; Railway publishes an HTTPS domain, so the tunnel has nothing left to do.
-
 Docker Desktop is for local development and for `just docker-app`, which runs the production
 image before you push it. Railway builds amd64 and Apple Silicon is arm64, so the image is
 rebuilt there rather than shipped from here — nothing in the Dockerfile pins an architecture.

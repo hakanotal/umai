@@ -136,26 +136,12 @@ fastest filter you have:
 `aiogram.exceptions.TelegramNetworkError: Request timeout error` appears from time to time and is
 Telegram's API being slow, not a bug; aiogram retries. It is only interesting if it is continuous.
 
-**`499` on `POST /webhook/telegram` means a meal was logged more than once.** The HTTP log shows
-them at roughly 20s and 60s:
-
-```
-POST /webhook/telegram 499 19769ms
-POST /webhook/telegram 499 59994ms
-POST /webhook/telegram 200 402ms
-```
-
-499 is the client hanging up. `web/api.py:106` awaits `dispatcher.feed_update` **inline**, so the
-webhook response is held for the entire 17–90s vision call; Telegram gives up waiting and
-redelivers the same `update_id`, and the handler runs again from the top. The deploy log shows
-one `Update id=…` handled twice at different durations, plus a third attempt that died at
-`photo.py:118` with `TelegramNetworkError` while *sending* its reply — which the user still
-received, because the send succeeded and only the acknowledgement timed out.
-
-Media is deduplicated: `_record_media` upserts on `(user_id, sha256)`, so all three attempts
-share one media row. **`log_entries` is not**, so each attempt writes a live entry, and because
-perception is re-run per attempt they do not even agree — 107, 119 and 107 kcal for one bowl of
-cacık, all three unsuperseded and all three counted. Verify with:
+**`499` on `POST /webhook/telegram`** is the client (Telegram) hanging up —
+transient, and only interesting if continuous. The webhook acknowledges before
+it runs the handler, and a `SeenUpdates` registry drops an `update_id` it has
+already accepted, so a redelivered update is not re-processed. A meal counted
+more than once is therefore a new bug, most likely a handler blocking the event
+loop. The query that finds duplicate-counted meals, should one appear:
 
 ```sql
 select e.id, e.logged_at, e.source, sum(fi.kcal)
@@ -164,9 +150,8 @@ where e.superseded_by is null and e.source = 'photo'
 group by 1,2,3 order by 2;
 ```
 
-Adjacent `photo` entries seconds apart, sharing a media row, are this bug rather than a fast
-eater. The enrichment job's advisory lock does contain *its* half — the second pass backfills
-zero — but it still pays for the model call, and the entries themselves are unprotected.
+Adjacent `photo` entries seconds apart, sharing a media row, are the shape to
+chase — not a fast eater.
 
 Deployment history, which is what you actually want after a failed push:
 
@@ -256,7 +241,7 @@ in prod while the code's default stays loopback, so the Mac never quietly widens
 | A meal logged as absurd calories | `sql/unmatched.sql`, then `sql/enrichment.sql` |
 | Steps missing for a day | `get_logs(log_type="http", path="/ingest/health")`, then `sql/steps.sql` — a **zero** is a different answer from a **missing** day |
 | Cost spike | `sql/spend.sql`, and count `httpx2` lines in the deploy log — check for 499-driven duplicate handling first |
-| A meal counted two or three times | `get_logs(log_type="http", status="499", path="/webhook/telegram")` — see §3 |
+| A meal counted two or three times | `get_logs(log_type="http", status="499", path="/webhook/telegram")` — a fresh one is a new bug; see §3 |
 | `/healthz` failing | The `pgvector` service, not the bot |
 
 ## 7. Known drift
