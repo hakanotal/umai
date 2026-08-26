@@ -13,7 +13,7 @@ prevent.
   green      #2F5741  the primary data colour
   green_soft #4A7358  secondary green, hover/second series
   sage       #7C9A5B  tertiary series
-  gold       #B8862B  the accent, reserved for goal lines
+  gold       #B8862B  the page's accent; not used by the charts
   gold_soft  #D2A94F  a fourth series, and the gold that survives as a fill
   cream      #EDE6C8  large calm areas
   cream_dim  #F4EFDC  background wash
@@ -46,6 +46,26 @@ LINE = "#DDD8C2"
 # rather than raising.
 FONT_STACK = ["Inter", "Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
 
+# The digest chart's three series. These are *semantic* rather than brand
+# colours: a reader should not have to consult a legend to know which bar is
+# water. Colour carries the meaning and the legend confirms it, which is what
+# lets the chart stay readable at Telegram's thumbnail size.
+#
+#   kcal   terracotta   food and heat
+#   water  slate blue   the one unarguable convention in the set
+#   steps  moss green   movement, and the palette's own green
+#
+# Desaturated towards the brand's earth tones rather than taken at full
+# strength: three saturated primaries on a cream page read as a spreadsheet.
+# They are matched for value, so no series looks louder than the others at a
+# glance. The goal line is drawn in INK rather than GOLD: gold sits close
+# enough to the terracotta in hue that the dashed rule went soft exactly where
+# it matters most, crossing a calorie bar. A near-black rule reads as
+# structure rather than as a fourth series, and holds against all three.
+SERIES_KCAL = "#C05B3A"
+SERIES_WATER = "#35708F"
+SERIES_STEPS = "#6E8C4A"
+
 __all__ = [
     "CREAM",
     "CREAM_DIM",
@@ -59,4 +79,7 @@ __all__ = [
     "MUTED",
     "PAPER",
     "SAGE",
+    "SERIES_KCAL",
+    "SERIES_STEPS",
+    "SERIES_WATER",
 ]

@@ -11,10 +11,11 @@ docs/index.html rather than like matplotlib.
 **The digest chart is one chart, not three.** Calories, water and steps are
 three units that cannot share an axis, so each bar is drawn as a percentage
 of that metric's own daily goal and the goal itself is the single dashed
-line at 100%. The absolute figures are not printed on the bars — they are
-already in the caption underneath, and putting them here twice is the
-crowding this chart is meant to avoid. What the bars are measured against
-lives in the legend, once per series.
+line at 100%. Series colour is semantic — terracotta food, blue water, green
+movement — so the bars can be read before the legend is. The absolute figures
+are not printed on the bars: they are already in the caption underneath, and
+putting them here twice is the crowding this chart is meant to avoid. What
+the bars are measured against lives in the legend, once per series.
 """
 
 from __future__ import annotations
@@ -131,19 +132,19 @@ def week_overview(
         kcal_label = "calories · vs own average"
 
     series = (
-        (kcal_label, kcal_ref, " kcal", theme.GREEN, [_pct(k, kcal_ref) for k in kcal]),
+        (kcal_label, kcal_ref, " kcal", theme.SERIES_KCAL, [_pct(k, kcal_ref) for k in kcal]),
         (
             "water",
             water_target_ml,
             " ml",
-            theme.SAGE,
+            theme.SERIES_WATER,
             [_pct(w, water_target_ml) for w in water_ml],
         ),
         (
             "steps",
             step_goal,
             "",
-            theme.GOLD_SOFT,
+            theme.SERIES_STEPS,
             [_pct(s, step_goal) for s in steps],
         ),
     )
@@ -202,7 +203,7 @@ def week_overview(
                     fontfamily=FONT,
                 )
 
-    ax.axhline(100, color=theme.GOLD, lw=1.2, ls=(0, (5, 4)), zorder=3)
+    ax.axhline(100, color=theme.INK, lw=1.1, ls=(0, (5, 4)), zorder=3, alpha=0.75)
     ax.text(
         len(days) - 0.4,
         101,
@@ -210,7 +211,7 @@ def week_overview(
         ha="right",
         va="bottom",
         fontsize=8,
-        color=theme.GOLD,
+        color=theme.INK,
         fontfamily=FONT,
     )
 
