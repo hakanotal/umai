@@ -1,8 +1,3 @@
-# research PDFs: large, and mostly publisher-licensed. Unanchored: the
-# directory has lived at the repo root and under docs/, and 23MB of
-# licensed PDFs must not become committable by being moved.
-papers/
-
 # secrets. .env.example is the committed template.
 .env
 .local.env
@@ -10,7 +5,9 @@ papers/
 !.env.example
 
 # data that must never leave the device
-/data/
+/data/media
+/data/backups
+/docs/papers
 /eval/photos/
 /eval/results/
 /eval/truth.csv
@@ -28,7 +25,9 @@ __pycache__/
 # macos
 .DS_Store
 
-# Symlinks into the primary checkout when this is a git worktree.
-/data
-/docs/papers
-/eval/photos
+# todo
+TODO.md
+
+# Agent
+.claude
+.opencode
