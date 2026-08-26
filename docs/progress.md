@@ -36,6 +36,12 @@ One page, three sections. Details live in CLAUDE.md and the module docstrings.
 - **Multi-user** (2026-08-23): invite phrase, chat onboarding wizard, per-user scheduler,
   per-user health token, `/export` and `/delete_me`. See the dated section below.
 
+- **The onboarding answers are editable** (2026-08-26): Configure → *Your details* lists every
+  wizard question with its current value on the button, and tapping one re-asks it with the
+  wizard's own prompt and parser (`telegram/handlers/profile.py`). The list is derived from
+  `STEPS`, not restated, so a new question becomes editable in the commit that adds it. Starting
+  weight is deliberately excluded — it is a `LogEntry`, and *Weigh in* is its editor.
+
 ## In progress
 
 - **Three weeks of real use** (Phase 1 gate): the bot is running in Docker on the Mac (`docker compose -f docker-compose.app.yml`), logging real meals, enrichment filling gaps as they appear. Pleasant or stop.
@@ -242,6 +248,19 @@ knows their IANA name, everybody knows their city — and then confirms by echoi
 back. That one extra tap is aimed squarely at the failure `progress.md` already recorded once,
 where a wrong zone sat unnoticed for weeks because nothing about it looks wrong until a day
 lands on the wrong date.
+
+**Answering once was not enough.** People mistype a height, move country, or change what they
+are aiming for, and until 2026-08-26 the only repair was `UPDATE users` — not a thing to ask of
+the person whose data it is. The Configure menu now opens the same questions again. The editor
+reuses the wizard's prompts, parsers and bounds rather than restating them, so there is exactly
+one definition of what a valid height is; what it adds is an FSM state, because during
+onboarding the current question is derivable from the first unset column and during an edit
+every column is set. It writes only a parsed `Ok`, so a rejected answer leaves the old value
+standing — a profile editor able to null `tz` would be able to violate `ck_users_active_has_tz`,
+and short of that would leave an `active` user whose every summary raises out of
+`current_target`. Sex, height, birth date and goal all feed Mifflin-St Jeor, so the confirmation
+recomputes and shows the new daily target rather than leaving the old one on screen until the
+morning, which reads as the edit having failed.
 
 **Access.** `TELEGRAM_ALLOWED_USER_IDS` became `UMAI_INVITE_CODE`. The alternative considered
 was a table of codes with expiry and per-invitee attribution, which is strictly more capable;

@@ -92,8 +92,51 @@ def configure_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🥣 Dinnerware", callback_data="cfg:dinnerware"),
                 InlineKeyboardButton(text="💧 Water target", callback_data="cfg:water"),
             ],
+            [InlineKeyboardButton(text="👤 Your details", callback_data="cfg:profile")],
         ]
     )
+
+
+def profile_menu(rows: Sequence[tuple[str, str, str]]) -> InlineKeyboardMarkup:
+    """The onboarding answers, one per row, each showing what it currently says.
+
+    `rows` is (field, label, current) straight from `core.onboarding`. The
+    value goes on the button rather than in the message body because the whole
+    point of opening this menu is to check a number before deciding whether to
+    change it, and a keyboard that says "Height · 180 cm" answers that without
+    a tap. One per row: "Date of birth · 1990-05-01" does not fit two abreast
+    on a phone, and a truncated date is worse than a longer keyboard.
+    """
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"{PENCIL} {label} · {current}", callback_data=f"prof:field:{field}"
+            )
+        ]
+        for field, label, current in rows
+    ]
+    buttons.append([InlineKeyboardButton(text="Back", callback_data="cfg:configure")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def profile_sex() -> InlineKeyboardMarkup:
+    return _sex_row(prefix="prof:set:sex")
+
+
+def profile_goal(choices: Sequence[tuple[str, float, str]]) -> InlineKeyboardMarkup:
+    return _goal_rows(choices, prefix="prof:set:goal")
+
+
+def profile_timezones(zones: Sequence[str]) -> InlineKeyboardMarkup:
+    return _timezone_rows(zones, prefix="prof:tz")
+
+
+def profile_tz_regions() -> InlineKeyboardMarkup:
+    return _tz_region_rows(region="prof:tzregion", other="prof:tzother")
+
+
+def profile_confirm_tz(zone: str) -> InlineKeyboardMarkup:
+    return _confirm_tz_row(zone, ok="prof:tzok", no="prof:tzno")
 
 
 def meal_actions(entry_id: str, n_items: int) -> InlineKeyboardMarkup:
@@ -196,11 +239,21 @@ def delete_confirm(entry_prefix: str) -> InlineKeyboardMarkup:
 
 
 def onboarding_sex() -> InlineKeyboardMarkup:
+    return _sex_row(prefix="ob:sex")
+
+
+def _sex_row(*, prefix: str) -> InlineKeyboardMarkup:
+    """One layout, two callback prefixes — the same split as `_cuisine_grid`.
+
+    The wizard's router sits behind `NeedsGate()` and the profile editor's
+    behind `IsActive()`, so a single prefix would be answered for exactly one
+    of the two callers and silently ignored for the other.
+    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Male", callback_data="ob:sex:male"),
-                InlineKeyboardButton(text="Female", callback_data="ob:sex:female"),
+                InlineKeyboardButton(text="Male", callback_data=f"{prefix}:male"),
+                InlineKeyboardButton(text="Female", callback_data=f"{prefix}:female"),
             ]
         ]
     )
@@ -215,9 +268,13 @@ def onboarding_goal(choices: Sequence[tuple[str, float, str]]) -> InlineKeyboard
     said so. Offering only rates that survive the rails makes the limit visible
     before it applies instead of silent afterwards.
     """
+    return _goal_rows(choices, prefix="ob:goal")
+
+
+def _goal_rows(choices: Sequence[tuple[str, float, str]], *, prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=label, callback_data=f"ob:goal:{rate}")]
+            [InlineKeyboardButton(text=label, callback_data=f"{prefix}:{rate}")]
             for label, rate, _kind in choices
         ]
     )
@@ -225,36 +282,49 @@ def onboarding_goal(choices: Sequence[tuple[str, float, str]]) -> InlineKeyboard
 
 def onboarding_timezones(zones: Sequence[str]) -> InlineKeyboardMarkup:
     """Candidate zones, when a city resolves to more than one."""
+    return _timezone_rows(zones, prefix="ob:tz")
+
+
+def _timezone_rows(zones: Sequence[str], *, prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=zone, callback_data=f"ob:tz:{zone}")] for zone in zones
+            [InlineKeyboardButton(text=zone, callback_data=f"{prefix}:{zone}")] for zone in zones
         ]
     )
 
 
 def onboarding_tz_regions() -> InlineKeyboardMarkup:
-    """Common timezone regions as one-tap buttons, plus a free-text fallback."""
+    """Common zones as one-tap buttons, plus a free-text fallback."""
+    return _tz_region_rows(region="ob:tzregion", other="ob:tzother")
+
+
+def _tz_region_rows(*, region: str, other: str) -> InlineKeyboardMarkup:
+    """The region grid, with a caller-supplied prefix.
+
+    Same reason as `_sex_row` and `_cuisine_grid`: the wizard's router is behind
+    `NeedsGate()` and the profile editor's behind `IsActive()`, so a hardcoded
+    `ob:` prefix would render buttons for a settled user that no handler ever
+    answers — a keyboard that silently does nothing when tapped.
+    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Istanbul", callback_data="ob:tzregion:Europe/Istanbul"),
-                InlineKeyboardButton(text="London", callback_data="ob:tzregion:Europe/London"),
-                InlineKeyboardButton(text="Berlin", callback_data="ob:tzregion:Europe/Berlin"),
+                InlineKeyboardButton(text="Istanbul", callback_data=f"{region}:Europe/Istanbul"),
+                InlineKeyboardButton(text="London", callback_data=f"{region}:Europe/London"),
+                InlineKeyboardButton(text="Berlin", callback_data=f"{region}:Europe/Berlin"),
             ],
             [
+                InlineKeyboardButton(text="New York", callback_data=f"{region}:America/New_York"),
                 InlineKeyboardButton(
-                    text="Los Angeles",
-                    callback_data="ob:tzregion:America/Los_Angeles",
+                    text="Los Angeles", callback_data=f"{region}:America/Los_Angeles"
                 ),
             ],
             [
-                InlineKeyboardButton(text="Tokyo", callback_data="ob:tzregion:Asia/Tokyo"),
-                InlineKeyboardButton(text="Dubai", callback_data="ob:tzregion:Asia/Dubai"),
-                InlineKeyboardButton(text="Sydney", callback_data="ob:tzregion:Australia/Sydney"),
+                InlineKeyboardButton(text="Tokyo", callback_data=f"{region}:Asia/Tokyo"),
+                InlineKeyboardButton(text="Dubai", callback_data=f"{region}:Asia/Dubai"),
+                InlineKeyboardButton(text="Sydney", callback_data=f"{region}:Australia/Sydney"),
             ],
-            [
-                InlineKeyboardButton(text="Other city", callback_data="ob:tzother"),
-            ],
+            [InlineKeyboardButton(text="Other city", callback_data=other)],
         ]
     )
 
@@ -267,11 +337,15 @@ def onboarding_confirm_tz(zone: str) -> InlineKeyboardMarkup:
     every total the bot will ever show is computed from it. Checking a clock is
     the only way a person can tell at the moment they answer.
     """
+    return _confirm_tz_row(zone, ok="ob:tzok", no="ob:tzno")
+
+
+def _confirm_tz_row(zone: str, *, ok: str, no: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text=f"{CHECK} Yes", callback_data=f"ob:tzok:{zone}"),
-                InlineKeyboardButton(text="No", callback_data="ob:tzno"),
+                InlineKeyboardButton(text=f"{CHECK} Yes", callback_data=f"{ok}:{zone}"),
+                InlineKeyboardButton(text="No", callback_data=no),
             ]
         ]
     )
