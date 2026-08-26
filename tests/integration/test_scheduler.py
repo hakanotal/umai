@@ -107,17 +107,21 @@ async def test_only_active_users_are_ticked(session, user, build_user):
 async def test_due_is_computed_in_each_users_own_zone(session, user, other_user):
     """The whole reason the tick replaced a cron.
 
-    At 20:00 UTC it is 23:00 in Istanbul and 21:00 in London, and with a 21:30
-    summary time that makes one of these two due and the other not. A single
-    cron, in whatever zone the process happened to be in, could not express
-    that at all.
+    At 21:20 UTC it is already 00:20 on the 24th in Istanbul but still 22:20 on
+    the 23rd in London, so the Istanbul user is ten minutes past a 00:10 digest
+    and the London one is twenty-two hours short of theirs. A single cron, in
+    whatever zone the process happened to be in, could not express that at all.
+
+    It is also the rollover: the Istanbul user's tick runs on the 24th and owes
+    the 23rd. A boolean "is it due" would have handed that tick a day ten
+    minutes old.
     """
     assert user.tz == "Europe/Istanbul"
     assert other_user.tz == "Europe/London"
-    clock = FakeClock(dt.datetime(2026, 8, 23, 20, 0, tzinfo=dt.UTC))
+    clock = FakeClock(dt.datetime(2026, 8, 23, 21, 20, tzinfo=dt.UTC))
 
-    assert jobs.summary_is_due(user, clock) is True
-    assert jobs.summary_is_due(other_user, clock) is False
+    assert jobs.summary_due_day(user, clock) == dt.date(2026, 8, 23)
+    assert jobs.summary_due_day(other_user, clock) is None
 
 
 async def test_a_users_own_summary_hour_is_respected(session, user):
@@ -126,11 +130,11 @@ async def test_a_users_own_summary_hour_is_respected(session, user):
     user.summary_hour, user.summary_minute = 19, 0
     await session.flush()
     clock = FakeClock(_at(user.tz, 23, 19, 5))
-    assert jobs.summary_is_due(user, clock) is True
+    assert jobs.summary_due_day(user, clock) == dt.date(2026, 8, 23)
 
     user.summary_hour = 22
     await session.flush()
-    assert jobs.summary_is_due(user, clock) is False
+    assert jobs.summary_due_day(user, clock) is None
 
 
 # ---------------------------------------------------------------------------
@@ -142,13 +146,15 @@ async def test_two_users_each_get_their_own_summary(session, user, other_user):
     """The bug the per-user claim exists to fix. With the claim keyed on
     (job, day) alone, whichever of these two was reached first would take the
     day and the other would be silently skipped."""
-    # 20:45 UTC is 23:45 in Istanbul and 21:45 in London, so both are past a
-    # 21:30 summary time. An hour later would have put Istanbul into the next
-    # day and quietly tested one user instead of two.
-    clock = FakeClock(dt.datetime(2026, 8, 23, 20, 45, tzinfo=dt.UTC))
-    await _log_a_meal(session, user, clock)
-    await _log_a_meal(session, other_user, clock)
+    # 23:30 UTC is 02:30 on the 24th in Istanbul and 00:30 on the 24th in
+    # London: both are inside the three-hour grace after their own 00:10, and
+    # both owe the 23rd. Two hours apart is the widest the pair can be and
+    # still be due together, which is the point — one clock cannot serve both.
+    evening = FakeClock(dt.datetime(2026, 8, 23, 18, 0, tzinfo=dt.UTC))
+    await _log_a_meal(session, user, evening)
+    await _log_a_meal(session, other_user, evening)
 
+    clock = FakeClock(dt.datetime(2026, 8, 23, 23, 30, tzinfo=dt.UTC))
     recorder = Recorder()
     await jobs.user_tick(_factory(session), SETTINGS, clock, recorder.send)
 
@@ -157,9 +163,9 @@ async def test_two_users_each_get_their_own_summary(session, user, other_user):
 
 async def test_a_second_tick_the_same_day_sends_nothing(session, user):
     """Coalesced misfires and restarts both re-run the tick. Sending the
-    evening summary twice is exactly the thing that makes a bot feel broken."""
-    clock = FakeClock(_at(user.tz, 23, 21, 45))
-    await _log_a_meal(session, user, clock)
+    digest twice is exactly the thing that makes a bot feel broken."""
+    await _log_a_meal(session, user, FakeClock(_at(user.tz, 23, 21, 0)))
+    clock = FakeClock(_at(user.tz, 24, 0, 15))
 
     recorder = Recorder()
     await jobs.user_tick(_factory(session), SETTINGS, clock, recorder.send)
@@ -174,8 +180,14 @@ async def test_an_empty_day_does_not_burn_the_claim(session, user):
     The claim used to be taken before the emptiness check, so a tick that then
     decided it had nothing to say still spent the day — and somebody who logged
     their first meal at ten in the evening got no summary at all.
+
+    A digest at 00:10 cannot be outrun by a late dinner any more, but the
+    invariant still earns its keep: the three-hour grace means several ticks
+    look at the same day, and anything that arrives for it in between — a
+    backfilled entry, an enrichment that finished after midnight — must still
+    find the claim unspent.
     """
-    clock = FakeClock(_at(user.tz, 23, 21, 45))
+    clock = FakeClock(_at(user.tz, 24, 0, 15))
     recorder = Recorder()
     await jobs.user_tick(_factory(session), SETTINGS, clock, recorder.send)
     assert recorder.photos == []
@@ -187,9 +199,10 @@ async def test_an_empty_day_does_not_burn_the_claim(session, user):
     )
     assert claims == []
 
-    # Now they log something, and a later tick on the same day still finds them.
-    await _log_a_meal(session, user, clock)
-    later = FakeClock(_at(user.tz, 23, 22, 30))
+    # Now something lands for that day after all, and a later tick still
+    # finds them rather than standing down on a claim it never earned.
+    await _log_a_meal(session, user, FakeClock(_at(user.tz, 23, 21, 0)))
+    later = FakeClock(_at(user.tz, 24, 1, 30))
     await jobs.user_tick(_factory(session), SETTINGS, later, recorder.send)
     assert len(recorder.photos) == 1
 
@@ -209,9 +222,10 @@ async def test_one_users_failure_does_not_silence_the_others(
     """Each user gets their own session scope for exactly this reason. One
     transaction for the whole pass means the first exception silences
     everybody."""
-    clock = FakeClock(dt.datetime(2026, 8, 23, 20, 45, tzinfo=dt.UTC))  # both due
-    await _log_a_meal(session, user, clock)
-    await _log_a_meal(session, other_user, clock)
+    evening = FakeClock(dt.datetime(2026, 8, 23, 18, 0, tzinfo=dt.UTC))
+    await _log_a_meal(session, user, evening)
+    await _log_a_meal(session, other_user, evening)
+    clock = FakeClock(dt.datetime(2026, 8, 23, 23, 30, tzinfo=dt.UTC))  # both due
 
     real = jobs.tools.day_totals
     doomed = user.id
@@ -289,3 +303,67 @@ async def test_the_weeks_series_keeps_a_missing_step_day_missing(session, user):
     by_day = dict(zip(week.days, week.steps, strict=True))
     assert by_day[dt.date(2026, 8, 21)] == 9000
     assert by_day[dt.date(2026, 8, 22)] is None
+
+
+# ---------------------------------------------------------------------------
+# The midnight boundary. The digest is due at 00:10 and is about yesterday.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_small_hours_digest_reports_the_day_that_ended(session, user):
+    """The whole point of moving past midnight, and the trap in doing so.
+
+    At 00:15 the local day is fifteen minutes old and empty. A digest that
+    asked for "today" would find nothing and either say so or say nothing;
+    either way the day it was meant to report on is gone.
+    """
+    await _log_a_meal(session, user, FakeClock(_at(user.tz, 23, 21, 0)))
+    clock = FakeClock(_at(user.tz, 24, 0, 15))
+
+    assert jobs.summary_due_day(user, clock) == dt.date(2026, 8, 23)
+
+    recorder = Recorder()
+    await jobs.user_tick(_factory(session), SETTINGS, clock, recorder.send)
+    assert len(recorder.photos) == 1
+
+    # And it is the 23rd that has been spent, not the 24th.
+    claimed = (
+        (await session.execute(select(JobRun.day).where(JobRun.job == "evening_summary")))
+        .scalars()
+        .all()
+    )
+    assert claimed == [dt.date(2026, 8, 23)]
+
+
+@pytest.mark.parametrize(
+    ("day", "hour", "minute", "expected"),
+    [
+        (23, 23, 55, None),  # five minutes short: the day is not over
+        (24, 0, 5, None),  # past midnight but not yet due
+        (24, 0, 10, dt.date(2026, 8, 23)),  # the appointment itself
+        (24, 2, 0, dt.date(2026, 8, 23)),  # a restart, still inside the grace
+        (24, 3, 5, dt.date(2026, 8, 23)),  # the last minute of the grace
+        (24, 3, 15, None),  # past it: better no digest than one at breakfast
+        (24, 12, 0, None),  # the middle of the next day owes nothing
+    ],
+)
+async def test_the_due_window_is_a_night_not_an_instant(session, user, day, hour, minute, expected):
+    """The tick runs every five minutes on an interval anchored to process
+    start, so a due time is a lower bound with a bounded grace, never an
+    appointment that has to be hit. A 23:59 digest — the obvious way to say
+    "end of day" — would have a sixty-second window that four ticks in five
+    miss outright."""
+    clock = FakeClock(_at(user.tz, day, hour, minute))
+    assert jobs.summary_due_day(user, clock) == expected
+
+
+async def test_an_evening_digest_still_reports_its_own_day(session, user):
+    """The small-hours rule is a rule about small hours. Somebody who has set
+    19:00 gets a digest about the day they are still in, and the catch-up for
+    it may cross midnight without ever meaning yesterday-minus-one."""
+    user.summary_hour, user.summary_minute = 19, 0
+    await session.flush()
+
+    assert jobs.summary_due_day(user, FakeClock(_at(user.tz, 23, 19, 5))) == dt.date(2026, 8, 23)
+    assert jobs.summary_due_day(user, FakeClock(_at(user.tz, 23, 23, 30))) is None
+    assert jobs.summary_due_day(user, FakeClock(_at(user.tz, 23, 21, 30))) == dt.date(2026, 8, 23)

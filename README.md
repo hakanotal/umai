@@ -46,7 +46,7 @@ which is what makes a short phrase safe; `/unblock <id>` undoes it. A correct ph
 into the same wizard.
 
 Their data is theirs. Separate timezone, separate targets, separate food library and portion
-history, separate photos on disk, separate evening summary at whatever hour suits them, and a
+history, separate photos on disk, separate daily digest at whatever hour suits them, and a
 separate token for Health Auto Export (`/token`). The food composition table is the one shared
 thing, deliberately: a dish researched for one person is correct for everyone, and fixing a row
 corrects every meal that ever referenced it.

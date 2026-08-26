@@ -196,11 +196,13 @@ class User(Base):
     # /token can show it again rather than forcing a rotation and a re-paste
     # into a phone app; the endpoint reads it, nothing else does.
     health_token: Mapped[str | None] = mapped_column(String(64), unique=True)
-    # When the evening summary is due, in this user's own zone. Two integers
+    # When the daily digest is due, in this user's own zone. Two integers
     # rather than a module constant because the scheduler now ticks over every
-    # active user and each of them keeps their own hours.
-    summary_hour: Mapped[int] = mapped_column(Integer, nullable=False, server_default="21")
-    summary_minute: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+    # active user and each of them keeps their own hours. The default is ten
+    # past midnight, and a time this early means the digest reports the day
+    # that has just ended — see `jobs.SMALL_HOURS`.
+    summary_hour: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    summary_minute: Mapped[int] = mapped_column(Integer, nullable=False, server_default="10")
     # Nullable, unlike everything else here that reads as required. This column
     # is the source of truth for every local-day boundary — food totals,
     # summaries, step bucketing — and there is no honest default for it, so a
