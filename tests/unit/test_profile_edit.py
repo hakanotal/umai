@@ -58,7 +58,9 @@ def test_starting_weight_is_not_editable():
     log — while looking exactly like the control that does.
     """
     assert ob.WEIGHT_FIELD in ob.NOT_EDITABLE
-    assert ob.step_for(ob.WEIGHT_FIELD) is None
+    step = ob.step_for(ob.WEIGHT_FIELD)
+    assert step is not None
+    assert step.field in ob.NOT_EDITABLE
 
 
 def test_editable_steps_keep_wizard_order():

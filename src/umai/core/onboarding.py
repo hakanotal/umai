@@ -335,13 +335,15 @@ def progress(state: Any) -> tuple[int, int]:
 
 # --- editing the answers afterwards -----------------------------------------
 
-# The one wizard step the profile editor does not offer. `onboarding_weight_kg`
+# The wizard steps the profile editor does not offer. `onboarding_weight_kg`
 # records what was said during the wizard; the weight *series* is LogEntry rows,
 # and `_finish` turns this column into the first of them. Re-answering it here
 # would edit a historical statement and change nothing the bot reads — the
 # trend, the target and the calibration fit all come from the log. "Weigh in"
-# is the real editor, and it writes where the readers look.
-NOT_EDITABLE = frozenset({WEIGHT_FIELD})
+# is the real editor, and it writes where the readers look. Cuisines live in
+# the Configure menu already; showing them again under "Your details" is
+# redundant.
+NOT_EDITABLE = frozenset({WEIGHT_FIELD, "cuisines"})
 
 # How many cuisine names fit on a button before the rest becomes "+2".
 _CUISINES_SHOWN = 3
@@ -358,13 +360,13 @@ def editable_steps() -> tuple[Step, ...]:
 
 
 def step_for(field: str) -> Step | None:
-    """The editable step for a column name, or None.
+    """The step for a column name, or None for a non-existent field.
 
-    Returns None for a field that is not editable as well as for one that does
-    not exist, because the caller — a callback carrying a field name in from
-    Telegram — must treat "no such step" and "not yours to edit" identically.
+    Searches all steps, not just editable ones, because `describe` needs to
+    read back any field's value. The profile editor adds its own editability
+    check.
     """
-    return next((s for s in editable_steps() if s.field == field), None)
+    return next((s for s in STEPS if s.field == field), None)
 
 
 def describe(step: Step, value: Any) -> str:
