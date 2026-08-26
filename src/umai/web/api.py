@@ -2,12 +2,11 @@
 
 Phase 1 serves two routes: the Health Auto Export ingest endpoint and, in prod,
 the Telegram webhook that feeds the dispatcher. The Mini App frontend itself is
-Phase 4.
-
-The ingest endpoint's bearer token is per user and is what decides whose health
-series a payload is written into. There is no longer a deployment-wide token in
-front of it: a shared gate adds nothing behind `tailscale serve` and guarantees
-that somebody eventually forgets to rotate it.
+Phase 4. An admin dashboard at /admin provides aggregate statistics with basic
+auth. The ingest endpoint's bearer token is per user and is what decides whose
+health series a payload is written into. There is no longer a deployment-wide
+token in front of it: a shared gate adds nothing behind `tailscale serve` and
+guarantees that somebody eventually forgets to rotate it.
 """
 
 from __future__ import annotations
@@ -31,6 +30,7 @@ from fastapi.responses import JSONResponse
 
 from umai.config.settings import Settings
 from umai.ingest.health import ingest
+from umai.web.admin import router as admin_router
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +65,8 @@ def create_app(settings: Settings, dispatcher=None, bot=None) -> FastAPI:
     # Per app instance, not module-level: the tests build several apps, and a
     # shared registry would have one test's update ids suppress another's.
     app.state.seen_updates = SeenUpdates()
+
+    app.include_router(admin_router)
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:

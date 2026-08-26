@@ -55,6 +55,9 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 # the clock abstraction is the one place allowed to read the wall clock
 "src/umai/clock.py" = ["DTZ005"]
+# admin dashboard: Depends() in defaults is the standard FastAPI pattern,
+# and the inline HTML string exceeds line length limits.
+"src/umai/web/admin.py" = ["B008", "E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # see docs/technical-implementation.md section 8. everything takes a Clock.
