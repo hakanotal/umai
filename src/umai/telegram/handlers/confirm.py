@@ -70,6 +70,56 @@ async def meal_ok(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer("Logged 👍")
 
 
+@router.callback_query(F.data.startswith("sv:"))
+async def save_as_recipe(
+    callback: CallbackQuery,
+    state: FSMContext,
+    clock: Clock,
+    principal: Principal,
+) -> None:
+    """Turn a just-logged meal into a saved recipe.
+
+    Validates up front: a meal with an unresolved item or one already sourced
+    from a recipe cannot become a recipe (`recipe_ingredients.food_id` is
+    not null, and a recipe-of-a-recipe would price against itself). Only when
+    every item is a resolved food does it stash the pairs, set
+    `Awaiting.recipe_name`, and hand control to `recipes.py` for the name —
+    the write itself goes through `tools.create_recipe` like every other
+    recipe path.
+    """
+    parts = cb_data(callback).split(":", 1)
+    if len(parts) < 2:
+        await callback.answer("Invalid.", show_alert=True)
+        return
+    prefix = parts[1]
+    async with session_scope() as session:
+        user = await tools.load_user(session, principal.id)
+        entry_id = await entry_by_prefix(session, user.id, prefix)
+        if entry_id is None:
+            await callback.answer(
+                "That meal is too old. Log it fresh, then save as recipe.",
+                show_alert=True,
+            )
+            return
+        ingredients = await tools.recipe_ingredients_from_entry(session, user.id, entry_id)
+    if ingredients is None:
+        await callback.answer(
+            "Can't save this as a recipe: an item wasn't recognised, "
+            "or it's already from a recipe.",
+            show_alert=True,
+        )
+        return
+    meal_ingredients = [{"food_id": str(fid), "grams": g} for fid, g in ingredients]
+    await state.set_state(Awaiting.recipe_name)
+    await state.update_data(recipe_meal_ingredients=meal_ingredients)
+    await callback.answer()
+    attached = cb_message(callback)
+    if attached is not None:
+        with contextlib.suppress(Exception):
+            await attached.edit_reply_markup()
+        await attached.answer("What should I call this recipe?")
+
+
 @router.message(Awaiting.number, F.text)
 async def number_received(
     message: Message, state: FSMContext, settings: Settings, clock: Clock, principal: Principal

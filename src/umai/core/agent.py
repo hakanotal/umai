@@ -134,6 +134,27 @@ def parse_classification(content: str | None) -> Classification:
     return Classification(intent=intent, items=items, ml=_opt_float("ml"), kg=_opt_float("kg"))
 
 
+async def classify_text(text: str, user: User, models: ModelClient) -> Classification:
+    """One structured call classifies free text into a meal, a weigh-in, water,
+    a status question, or chat.
+
+    Reused by the text-meal path and the recipe-ingredient path: a list like
+    "yoghurt 150g, granola 50g, frozen blueberries" splits into items the same
+    way a typed meal does. The model always returns a grams number per item;
+    `grams_estimated` flags the ones the user did not state, which the recipe
+    path defaults to 100g and the meal path treats as a vision-style guess.
+    """
+    content, _served, _ms = await models.acall(
+        "routing",
+        messages=[
+            {"role": "system", "content": INTENT_SYSTEM},
+            {"role": "user", "content": _cuisine_hint(user) + text},
+        ],
+        schema=INTENT_SCHEMA,
+    )
+    return parse_classification(content)
+
+
 # ---------------------------------------------------------------------------
 # The reply layer
 # ---------------------------------------------------------------------------
@@ -197,15 +218,7 @@ async def handle_text(
     if value is not None and 30.0 <= value <= 250.0:
         return Reply(await _log_weight(session, user, clock, value))
 
-    content, _served, _ms = await models.acall(
-        "routing",
-        messages=[
-            {"role": "system", "content": INTENT_SYSTEM},
-            {"role": "user", "content": _cuisine_hint(user) + text},
-        ],
-        schema=INTENT_SCHEMA,
-    )
-    c = parse_classification(content)
+    c = await classify_text(text, user, models)
 
     if c.intent == "log_food" and c.items:
         return await _log_food(session, models, user, clock, c.items)

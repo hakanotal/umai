@@ -1,8 +1,10 @@
-"""/library — one-tap re-logging of the foods this person eats most.
+"""/library — one-tap re-logging of the recipes this person has saved.
 
-The library fills as the user logs. This surfaces the most frequent items with
-the typical portion, so a repeat meal costs a tap rather than a photo and a
-vision call.
+Only saved recipes appear. The library of foods-logged-often — which surfaced
+each logged ingredient as its own row and made a named dish invisible — was
+the confusion this replaces. The `food_library` table still fills as the user
+logs (it feeds the perception prompt's portion priors), it just no longer has
+a display surface here.
 """
 
 from __future__ import annotations
@@ -16,10 +18,9 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
 
 from umai.clock import Clock
-from umai.config.models import ModelClient
 from umai.config.settings import Settings
 from umai.core import tools
-from umai.db.models import EntrySource, Food, FoodState, GramsSource, Recipe, ResolutionMethod
+from umai.db.models import EntrySource, FoodState, GramsSource, Recipe, ResolutionMethod
 from umai.db.session import session_scope
 from umai.resolver.match import Resolution
 from umai.telegram import keyboards
@@ -29,85 +30,25 @@ from umai.telegram.middleware import Principal
 router = Router(name="library")
 
 
-# The library fills as the user logs. This surfaces the most frequent items
-# for one-tap re-logging with the typical portion.
-
-
 @router.message(Command("library"))
 @router.message(F.text == keyboards.BTN_LIBRARY)
 async def library_command(
     message: Message, settings: Settings, clock: Clock, principal: Principal
 ) -> None:
-    """Show saved recipes and most frequent foods for one-tap re-logging."""
+    """Show saved recipes for one-tap re-logging."""
     async with session_scope() as session:
         user = await tools.load_user(session, principal.id)
-        recipes = await tools.user_recipes(session, user.id, limit=5)
-        items = await tools.user_library(session, user.id, limit=5)
-    if not recipes and not items:
+        recipes = await tools.user_recipes(session, user.id, limit=8)
+    if not recipes:
         await message.answer(
-            "You haven't saved any recipes or logged meals yet. "
-            "Save a dish with /recipe, or log a meal and I'll remember the ones you eat often."
+            "You haven't saved any recipes yet. Create one with /recipe, "
+            "or tap 💾 Save as recipe under a meal you've just logged."
         )
         return
     await message.answer(
-        "Tap to log again with your usual portion:",
-        reply_markup=keyboards.library_items(items, recipes),
+        "Tap a recipe to log it again:",
+        reply_markup=keyboards.library_items(recipes),
     )
-
-
-@router.callback_query(F.data.startswith("lib:"))
-async def library_quick_log(
-    callback: CallbackQuery,
-    settings: Settings,
-    clock: Clock,
-    models: ModelClient,
-    principal: Principal,
-) -> None:
-    """One-tap log from the library. Uses the typical portion."""
-    parts = cb_data(callback).split(":", 2)
-    try:
-        food_id = uuid.UUID(parts[1])
-        typical = float(parts[2]) if len(parts) > 2 else 100.0
-    except (ValueError, IndexError):
-        await callback.answer("Invalid item.", show_alert=True)
-        return
-
-    async with session_scope() as session:
-        user = await tools.load_user(session, principal.id)
-        food = await session.get(Food, food_id)
-        if food is None:
-            await callback.answer("That food no longer exists.", show_alert=True)
-            return
-
-        resolution = Resolution(
-            food_id=food_id,
-            recipe_id=None,
-            display_name=food.canonical_name_en,
-            method=ResolutionMethod.library,
-            confidence=1.0,
-        )
-        meal = await tools.log_food_items(
-            session,
-            user.id,
-            [
-                tools.ItemToLog(
-                    detected_name=food.canonical_name_en,
-                    detected_state=FoodState(food.state.value if food.state else "unknown"),
-                    grams=typical,
-                    grams_source=GramsSource.user,
-                    grams_confidence=1.0,
-                    resolution=resolution,
-                )
-            ],
-            occurred_at=clock.now(),
-            source=EntrySource.button,
-        )
-    await callback.answer(f"Logged {food.canonical_name_en} ({typical:.0f}g)")
-    # Update the message with the logged result
-    attached = cb_message(callback)
-    if attached is not None:
-        with contextlib.suppress(Exception):
-            await attached.edit_text(tools.format_meal(meal))
 
 
 @router.callback_query(F.data.startswith("rec:"))

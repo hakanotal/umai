@@ -35,7 +35,7 @@ import datetime as dt
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, delete, func, or_, select, update
@@ -60,8 +60,11 @@ from umai.db.models import (
     User,
 )
 from umai.resolver import compute as compute_mod
-from umai.resolver.compute import RecipeProfile
+from umai.resolver.compute import FoodLike, RecipeProfile, recipe_profile
 from umai.resolver.match import Resolution
+
+if TYPE_CHECKING:
+    from umai.db.models import Recipe
 
 # ---------------------------------------------------------------------------
 # The shared write path for every food log, photo or text
@@ -429,12 +432,20 @@ class LibraryItem:
 
 @dataclass(slots=True)
 class RecipeListItem:
-    """A recipe the user has saved, with its most-recent portion."""
+    """A recipe the user has saved, with its most-recent portion and its
+    per-serving calories.
+
+    `kcal` is the energy of one serving (the portion above times the recipe's
+    per-100g cache), shown on the button in place of the grams the list used
+    to carry — a serving's calories is the number that decides whether to log
+    it, the grams are not.
+    """
 
     recipe_id: uuid.UUID
     name: str
     portion_grams: float
     times_logged: int
+    kcal: float = 0.0
 
 
 async def user_library(
@@ -518,6 +529,7 @@ async def user_recipes(
             Recipe.name,
             Recipe.times_logged,
             Recipe.servings_grams,
+            Recipe.kcal_per_100g,
             recent_grams.label("recent_grams"),
         )
         .where(
@@ -536,15 +548,106 @@ async def user_recipes(
             grams = float(r.servings_grams)
         else:
             grams = 100.0
+        per_100 = float(r.kcal_per_100g) if r.kcal_per_100g is not None else 0.0
         items.append(
             RecipeListItem(
                 recipe_id=r.id,
                 name=r.name,
                 portion_grams=grams,
                 times_logged=r.times_logged,
+                kcal=grams * per_100 / 100.0,
             )
         )
     return items
+
+
+async def create_recipe(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
+    ingredients: Sequence[tuple[uuid.UUID, float]],
+    *,
+    cooked_output_grams: float | None = None,
+) -> Recipe:
+    """The one write path for a composed dish.
+
+    A recipe is one `Recipe` row and N `RecipeIngredient` rows, never a row
+    per ingredient — the confusion this replaced logged each ingredient
+    separately into the library and the dish never existed as a whole. Both
+    paths that build a recipe converge here: `/recipe` after the gram-adjust
+    step, and the "Save as recipe" button on a just-logged meal.
+
+    The per-100g cache on the recipe is derived here, never typed in, so
+    fixing a `foods` row retroactively corrects every recipe built on it. The
+    caller must hand in already-resolved `(food_id, grams)` pairs; an
+    unresolved ingredient is the caller's failure to report, not this
+    function's to invent nutrition for.
+    """
+    from umai.db.models import Recipe, RecipeIngredient
+
+    raw_total = sum(g for _, g in ingredients)
+    recipe = Recipe(
+        user_id=user_id,
+        name=name,
+        raw_input_grams=raw_total,
+        cooked_output_grams=cooked_output_grams,
+    )
+    session.add(recipe)
+    await session.flush()
+
+    for food_id, grams in ingredients:
+        session.add(
+            RecipeIngredient(
+                recipe_id=recipe.id,
+                food_id=food_id,
+                grams=grams,
+            )
+        )
+    await session.flush()
+
+    foods: list[tuple[FoodLike, float]] = []
+    for food_id, grams in ingredients:
+        food = await session.get(Food, food_id)
+        if food is not None:
+            foods.append((food, grams))
+
+    profile = recipe_profile(foods, cooked_output_grams=cooked_output_grams)
+    recipe.kcal_per_100g = profile.kcal_per_100g
+    recipe.protein_g_per_100g = profile.protein_g_per_100g
+    recipe.carbs_g_per_100g = profile.carbs_g_per_100g
+    recipe.fat_g_per_100g = profile.fat_g_per_100g
+    return recipe
+
+
+async def recipe_ingredients_from_entry(
+    session: AsyncSession, user_id: uuid.UUID, entry_id: uuid.UUID
+) -> list[tuple[uuid.UUID, float]] | None:
+    """The resolved ``(food_id, grams)`` pairs of a logged meal, ready to become
+    a recipe — the read-side companion to `create_recipe`.
+
+    Returns ``None`` when the meal cannot become a recipe: an item the resolver
+    never matched (``food_id`` is null), or one already sourced from a recipe
+    (``recipe_id`` is not null), which would make a recipe of a recipe. The
+    `recipe_ingredients` table requires a real `food_id`, and a circular
+    reference would price a recipe against itself. The caller reports the
+    reason; this function only answers whether.
+    """
+    rows = (
+        await session.execute(
+            select(FoodItem.food_id, FoodItem.recipe_id, FoodItem.grams)
+            .join(LogEntry, FoodItem.entry_id == LogEntry.id)
+            .where(FoodItem.entry_id == entry_id, LogEntry.user_id == user_id)
+            .order_by(FoodItem.position)
+        )
+    ).all()
+    if not rows:
+        return None
+    pairs: list[tuple[uuid.UUID, float]] = []
+    for r in rows:
+        if r.food_id is None or r.recipe_id is not None:
+            return None
+        pairs.append((r.food_id, float(r.grams)))
+    return pairs
 
 
 async def add_dinnerware(

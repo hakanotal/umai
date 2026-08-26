@@ -30,7 +30,7 @@ from aiogram.types import (
 )
 
 from umai.core.cuisines import CUISINES
-from umai.core.tools import LibraryItem, RecipeListItem, TodayEntry
+from umai.core.tools import RecipeListItem, TodayEntry
 
 WATER = "💧"
 SCALE = "⚖️"
@@ -40,6 +40,8 @@ PENCIL = "✏️"
 BASKET = "🗑"
 CHECK = "✅"
 GEAR = "⚙️"
+SAVE = "💾"
+COOK = "♨️"
 
 WATER_250 = f"{WATER} 250 ml"
 BTN_TODAY = f"{CALENDAR} Today"
@@ -138,10 +140,15 @@ def profile_confirm_tz(zone: str) -> InlineKeyboardMarkup:
 
 
 def meal_actions(entry_id: str, n_items: int) -> InlineKeyboardMarkup:
-    """Per-item gram correction under a logged meal.
+    """Per-item gram correction under a logged meal, plus a one-tap save as a
+    recipe.
 
     One button per item, so the only correction the plan says is usually
     needed ("that was more like 200g") is two taps: the item, then the number.
+    The save-as-recipe row sits above "Looks right" in its own row so the two
+    terminal actions never share a row with the per-item corrections: a recipe
+    is the whole meal, a gram fix is one part of it, and mixing them visually
+    would make the whole-meal action look like another item edit.
     """
     row = [
         InlineKeyboardButton(
@@ -151,6 +158,14 @@ def meal_actions(entry_id: str, n_items: int) -> InlineKeyboardMarkup:
         for i in range(1, min(n_items, 8) + 1)
     ]
     rows = [row[i : i + 4] for i in range(0, len(row), 4)]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"{SAVE} Save as recipe",
+                callback_data=f"sv:{entry_id[:ENTRY_PREFIX_LEN]}",
+            )
+        ]
+    )
     rows.append(
         [
             InlineKeyboardButton(
@@ -399,33 +414,51 @@ def dinnerware_list(items: dict[str, str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def library_items(
-    items: list[LibraryItem], recipes: list[RecipeListItem] | None = None
-) -> InlineKeyboardMarkup:
-    """One-tap re-log for saved recipes (top) and frequent foods (below).
+def library_items(recipes: list[RecipeListItem]) -> InlineKeyboardMarkup:
+    """One-tap re-log for the recipes this person has saved.
 
-    Recipes carry a `rec:` callback prefix and foods a `lib:` one, so the two
-    quick-log handlers stay separate and a recipe id is never mistaken for a
-    food id. Each shows the most-recent portion that food or recipe was logged
-    at, never the 100g placeholder that used to make every line read the same.
+    Only saved recipes appear — the library of foods-logged-often was the
+    confusion this replaces, where a logged meal surfaced each ingredient as
+    its own row and a named dish never existed as a whole. The button carries
+    per-serving calories rather than grams: the grams decide nothing at the
+    moment of re-logging, the calories do, and a saved recipe's portion is
+    already fixed at save time.
+
+    The `rec:` callback prefix and the recipe id stay in the data so the
+    quick-log handler can reprice at the portion the user last served.
     """
     rows: list[list[InlineKeyboardButton]] = []
-    for r in recipes or []:
+    for r in recipes:
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{r.name} ({r.portion_grams:.0f}g)",
+                    text=f"{r.name} — {r.kcal:.0f} kcal",
                     callback_data=f"rec:{r.recipe_id}:{r.portion_grams:.0f}",
                 )
             ]
         )
-    for item in items:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"{item.name} ({item.portion_grams:.0f}g)",
-                    callback_data=f"lib:{item.food_id}:{item.portion_grams:.0f}",
-                )
-            ]
-        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def recipe_draft(n_items: int, *, cooked_grams: float | None = None) -> InlineKeyboardMarkup:
+    """The adjust step's keyboard: fix a weight, set the cooked weight, save.
+
+    This is the one place a recipe is editable. After `Save recipe` the dish
+    is immutable, so every correction lives here: per-item gram buttons
+    (addressed by 1-based position, the same convention `meal_actions` uses),
+    the cooked-weight side-trip that captures evaporation for simmered dishes,
+    and the two terminal buttons. Cancel discards the draft without writing.
+    """
+    row = [
+        InlineKeyboardButton(text=f"{PENCIL} {i}", callback_data=f"rfix:{i}")
+        for i in range(1, min(n_items, 8) + 1)
+    ]
+    rows = [row[i : i + 4] for i in range(0, len(row), 4)]
+    if cooked_grams is not None:
+        cook_label = f"{COOK} Cooked: {cooked_grams:.0f}g"
+    else:
+        cook_label = f"{COOK} Cooked weight"
+    rows.append([InlineKeyboardButton(text=cook_label, callback_data="rcook:")])
+    rows.append([InlineKeyboardButton(text=f"{SAVE} Save recipe", callback_data="rsave:")])
+    rows.append([InlineKeyboardButton(text="Cancel", callback_data="rcancel:")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
