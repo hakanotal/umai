@@ -131,6 +131,10 @@ def profile_timezones(zones: Sequence[str]) -> InlineKeyboardMarkup:
     return _timezone_rows(zones, prefix="prof:tz")
 
 
+def profile_tz_regions() -> InlineKeyboardMarkup:
+    return _tz_region_rows(region="prof:tzregion", other="prof:tzother")
+
+
 def profile_confirm_tz(zone: str) -> InlineKeyboardMarkup:
     return _confirm_tz_row(zone, ok="prof:tzok", no="prof:tzno")
 
@@ -285,6 +289,42 @@ def _timezone_rows(zones: Sequence[str], *, prefix: str) -> InlineKeyboardMarkup
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=zone, callback_data=f"{prefix}:{zone}")] for zone in zones
+        ]
+    )
+
+
+def onboarding_tz_regions() -> InlineKeyboardMarkup:
+    """Common zones as one-tap buttons, plus a free-text fallback."""
+    return _tz_region_rows(region="ob:tzregion", other="ob:tzother")
+
+
+def _tz_region_rows(*, region: str, other: str) -> InlineKeyboardMarkup:
+    """The region grid, with a caller-supplied prefix.
+
+    Same reason as `_sex_row` and `_cuisine_grid`: the wizard's router is behind
+    `NeedsGate()` and the profile editor's behind `IsActive()`, so a hardcoded
+    `ob:` prefix would render buttons for a settled user that no handler ever
+    answers — a keyboard that silently does nothing when tapped.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Istanbul", callback_data=f"{region}:Europe/Istanbul"),
+                InlineKeyboardButton(text="London", callback_data=f"{region}:Europe/London"),
+                InlineKeyboardButton(text="Berlin", callback_data=f"{region}:Europe/Berlin"),
+            ],
+            [
+                InlineKeyboardButton(text="New York", callback_data=f"{region}:America/New_York"),
+                InlineKeyboardButton(
+                    text="Los Angeles", callback_data=f"{region}:America/Los_Angeles"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="Tokyo", callback_data=f"{region}:Asia/Tokyo"),
+                InlineKeyboardButton(text="Dubai", callback_data=f"{region}:Asia/Dubai"),
+                InlineKeyboardButton(text="Sydney", callback_data=f"{region}:Australia/Sydney"),
+            ],
+            [InlineKeyboardButton(text="Other city", callback_data=other)],
         ]
     )
 

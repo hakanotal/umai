@@ -204,6 +204,33 @@ def test_the_field_prefix_cannot_be_confused_with_the_value_prefixes():
     assert keyboards.profile_sex().inline_keyboard[0][0].callback_data.startswith("prof:set:")
 
 
+def test_the_editor_offers_the_same_timezone_regions_as_the_wizard():
+    """Same cities, same layout, different prefix.
+
+    Someone who onboarded by tapping "Istanbul" meets that button again rather
+    than a bare instruction to type a city.
+    """
+    wizard = keyboards.onboarding_tz_regions().inline_keyboard
+    editor = keyboards.profile_tz_regions().inline_keyboard
+    assert [[b.text for b in row] for row in wizard] == [[b.text for b in row] for row in editor]
+
+
+def test_the_editors_region_buttons_are_answered_by_the_editors_own_router():
+    """A region keyboard drawn with the wizard's `ob:` prefix would render for
+    a settled user and do nothing when tapped — the wizard's router is behind
+    `NeedsGate()`, which an active user fails."""
+    for row in keyboards.profile_tz_regions().inline_keyboard:
+        for button in row:
+            assert button.callback_data.startswith("prof:")
+
+
+def test_new_york_is_on_the_region_keyboard():
+    """It was named in the commit that added the keyboard and absent from it,
+    which left the Americas represented by Los Angeles alone."""
+    labels = [b.text for row in keyboards.onboarding_tz_regions().inline_keyboard for b in row]
+    assert "New York" in labels
+
+
 def test_configure_menu_offers_the_profile():
     """The entry point the whole feature hangs off."""
     data = [b.callback_data for row in keyboards.configure_menu().inline_keyboard for b in row]

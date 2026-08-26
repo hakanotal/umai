@@ -223,7 +223,7 @@ class Step:
     field: str
     prompt: str
     parse: Callable[[str], ParseResult]
-    kind: Literal["text", "sex", "goal", "cuisines"]
+    kind: Literal["text", "sex", "goal", "cuisines", "tz"]
     label: str
 
 
@@ -236,7 +236,7 @@ STEPS: tuple[Step, ...] = (
             "and ends — everything I total up depends on it."
         ),
         parse=parse_tz,
-        kind="text",
+        kind="tz",
         label="Timezone",
     ),
     Step(

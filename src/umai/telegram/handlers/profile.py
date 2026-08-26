@@ -107,6 +107,15 @@ async def show_profile(callback: CallbackQuery, state: FSMContext, principal: Pr
 
 
 def _keyboard(step: ob.Step) -> InlineKeyboardMarkup | None:
+    """The wizard's keyboards, drawn with this router's callback prefix.
+
+    Same `kind` tags and the same layouts, deliberately — a person who onboarded
+    by tapping "Istanbul" should meet that button again rather than a bare
+    prompt to type a city. Only the prefix differs, because the wizard's router
+    is behind `NeedsGate()` and this one behind `IsActive()`.
+    """
+    if step.kind == "tz":
+        return keyboards.profile_tz_regions()
     if step.kind == "sex":
         return keyboards.profile_sex()
     if step.kind == "goal":
@@ -310,8 +319,38 @@ async def _confirm_timezone(message: Message, zone: str, clock: Clock) -> None:
     )
 
 
+@router.callback_query(F.data.startswith("prof:tzregion:"))
+async def pick_timezone_region(callback: CallbackQuery, clock: Clock) -> None:
+    """One of the offered cities. Confirmed rather than written, like the rest.
+
+    A tapped button is not more trustworthy than a typed city here: the whole
+    risk with a zone is picking a plausible wrong one, and "London" is exactly
+    as plausible to somebody in Dublin either way.
+    """
+    zone = cb_data(callback).split(":", 2)[2]
+    await callback.answer()
+    attached = cb_message(callback)
+    if attached is not None:
+        await _confirm_timezone(attached, zone, clock)
+
+
+@router.callback_query(F.data == "prof:tzother")
+async def ask_free_text_tz(callback: CallbackQuery) -> None:
+    """The fallback for a city not on the grid.
+
+    The FSM state is deliberately left alone: it is still the timezone question
+    that is owed, and clearing it would send the typed city to the meal
+    classifier instead.
+    """
+    await callback.answer()
+    attached = cb_message(callback)
+    if attached is not None:
+        await attached.answer("Type your city name or the full zone name (like Europe/Istanbul).")
+
+
 @router.callback_query(F.data.startswith("prof:tz:"))
 async def pick_timezone(callback: CallbackQuery, clock: Clock) -> None:
+    """One of several zones a typed city resolved to."""
     zone = cb_data(callback).split(":", 2)[2]
     await callback.answer()
     attached = cb_message(callback)
